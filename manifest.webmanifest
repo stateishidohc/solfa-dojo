@@ -1,0 +1,16 @@
+{
+  "name": "ソルフェ道場 — ギター×ソルフェージュ",
+  "short_name": "ソルフェ道場",
+  "description": "移動ドの度数聴音・旋律聴音・指板・譜読み・視唱を段階的に鍛えるギタリスト向けトレーナー",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#F6F4EE",
+  "theme_color": "#0F6E56",
+  "lang": "ja",
+  "icons": [
+    {"src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png"},
+    {"src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png"}
+  ]
+}

@@ -1,0 +1,704 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>耳トレ — ギター音感ゲーム</title>
+<style>
+:root{
+  --teal:#0F6E56; --teal-dark:#085041; --teal-light:#E1F5EE;
+  --bg:#FAF8F3; --card:#FFFFFF; --border:#E3DED2;
+  --text:#2C2C2A; --muted:#77756D;
+  --red:#A32D2D; --red-light:#FCEBEB; --green:#3B6D11; --green-light:#EAF3DE;
+  --amber-light:#FAEEDA;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:"Hiragino Sans","Yu Gothic",system-ui,sans-serif;background:var(--bg);color:var(--text);line-height:1.6}
+main{max-width:760px;margin:0 auto;padding:16px}
+header{background:var(--teal);color:#fff;padding:12px 16px}
+.head-in{max-width:760px;margin:0 auto;display:flex;align-items:center;gap:12px}
+header h1{font-size:20px;font-weight:600;flex:1}
+.streak{font-size:14px;background:rgba(255,255,255,.15);padding:4px 10px;border-radius:99px}
+.hbtn{background:transparent;border:1px solid rgba(255,255,255,.4);color:#fff;border-radius:8px;padding:5px 12px;font-size:14px;cursor:pointer}
+.hbtn:hover{background:rgba(255,255,255,.12)}
+section{display:none}
+section.active{display:block}
+.card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:18px;margin:14px 0}
+.stage-card{display:flex;align-items:center;gap:14px;cursor:pointer;transition:border-color .15s}
+.stage-card:hover{border-color:var(--teal)}
+.stage-card.locked{opacity:.5;cursor:default}
+.stage-num{width:44px;height:44px;border-radius:50%;background:var(--teal-light);color:var(--teal-dark);display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:700;flex-shrink:0}
+.stage-card.goal .stage-num{background:#EEEDFE;color:#3C3489}
+.stage-info{flex:1}
+.stage-title{font-weight:600;font-size:16px}
+.stage-desc{font-size:13px;color:var(--muted)}
+.stage-meta{text-align:right;font-size:13px;color:var(--muted);flex-shrink:0}
+.lv-badge{display:inline-block;background:var(--teal);color:#fff;border-radius:99px;padding:2px 10px;font-size:12px;font-weight:600}
+.lv-badge.max{background:#BA7517}
+.btn{display:inline-block;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px 16px;font-size:15px;cursor:pointer;color:var(--text)}
+.btn:hover{border-color:var(--teal)}
+.btn:disabled{opacity:.45;cursor:default}
+.btn.primary{background:var(--teal);border-color:var(--teal);color:#fff;font-weight:600}
+.btn.primary:hover{background:var(--teal-dark)}
+.btn.big{font-size:17px;padding:12px 28px}
+.q-head{display:flex;align-items:center;gap:10px;font-size:14px;color:var(--muted);margin-bottom:6px}
+.q-head .combo{margin-left:auto;color:#BA7517;font-weight:600}
+.q-text{font-size:17px;font-weight:600;margin:10px 0 14px}
+.answers{display:flex;flex-wrap:wrap;gap:10px;margin:14px 0}
+.answers .btn{min-width:110px}
+.answers .btn.correct{background:var(--green-light);border-color:var(--green);color:var(--green)}
+.answers .btn.wrong{background:var(--red-light);border-color:var(--red);color:var(--red)}
+.feedback{border-radius:10px;padding:12px 14px;margin:12px 0;font-size:15px;display:none}
+.feedback.ok{display:block;background:var(--green-light);color:var(--green)}
+.feedback.ng{display:block;background:var(--red-light);color:var(--red)}
+.progress-bar{height:8px;background:var(--border);border-radius:99px;overflow:hidden;margin:8px 0 16px}
+.progress-bar>div{height:100%;background:var(--teal);border-radius:99px;transition:width .3s}
+.fret-wrap{overflow-x:auto;margin:12px 0;padding-bottom:6px}
+table.fret{border-collapse:collapse}
+table.fret th{font-size:11px;color:var(--muted);font-weight:400;padding:2px 0;min-width:44px}
+table.fret td{width:44px;height:36px;border:1px solid #D8D2C2;background:#F6F0E2;cursor:pointer;text-align:center}
+table.fret td:hover{background:#EDE3CC}
+table.fret td.nut{border-right:4px solid #6B6558}
+table.fret .slabel{font-size:12px;color:var(--muted);padding-right:8px;text-align:right;font-weight:400}
+table.fret td.hl-anchor{background:var(--teal);color:#fff;font-size:11px;font-weight:600}
+table.fret td.hl-correct{background:var(--green-light);border-color:var(--green)}
+table.fret td.hl-wrong{background:var(--red-light);border-color:var(--red)}
+.melody-dots{display:flex;gap:8px;margin:10px 0;align-items:center}
+.mdot{width:26px;height:26px;border-radius:50%;border:2px solid var(--border);background:var(--card)}
+.mdot.filled{background:var(--teal);border-color:var(--teal)}
+.mdot.given{background:var(--teal-light);border-color:var(--teal)}
+.result-score{font-size:52px;font-weight:700;text-align:center;color:var(--teal-dark)}
+.result-msg{text-align:center;font-size:17px;margin:8px 0}
+.result-sub{text-align:center;font-size:14px;color:var(--muted);margin:4px 0}
+.notice{background:var(--amber-light);color:#854F0B;border-radius:10px;padding:10px 14px;margin:10px auto;font-size:15px;font-weight:600;text-align:center;max-width:420px}
+.center{text-align:center}
+.heat{display:grid;grid-template-columns:70px repeat(2,1fr);gap:4px;font-size:13px;max-width:360px}
+.heat .hcell{border-radius:6px;padding:4px 8px;text-align:center}
+.heat .hlabel{color:var(--muted);padding:4px 0}
+.stats-row{display:flex;gap:12px;flex-wrap:wrap;margin:10px 0}
+.stat-box{flex:1;min-width:120px;background:var(--teal-light);border-radius:10px;padding:12px;text-align:center}
+.stat-box .num{font-size:26px;font-weight:700;color:var(--teal-dark)}
+.stat-box .lab{font-size:12px;color:var(--muted)}
+.hint{font-size:13px;color:var(--muted)}
+h2{font-size:18px;font-weight:600;margin:18px 0 6px}
+</style>
+</head>
+<body>
+<header>
+  <div class="head-in">
+    <h1>耳トレ 🎸</h1>
+    <span class="streak" id="streakBadge">🔥 0日</span>
+    <button class="hbtn" id="navStats">成績</button>
+    <button class="hbtn" id="navHome">ホーム</button>
+  </div>
+</header>
+<main>
+
+<section id="view-menu" class="active">
+  <p class="hint" style="margin:14px 4px 4px">1ラウンド10問。8問以上正解でレベルアップ、レベル2到達で次のステージが解放されます。</p>
+  <div id="stageList"></div>
+</section>
+
+<section id="view-game">
+  <div class="card">
+    <div class="q-head">
+      <span id="qStage"></span>
+      <span id="qNum"></span>
+      <span class="combo" id="qCombo"></span>
+    </div>
+    <div class="progress-bar"><div id="qProg" style="width:0%"></div></div>
+    <div class="q-text" id="qText"></div>
+    <button class="btn" id="btnReplay">🔊 もう一度聴く</button>
+    <div id="answerArea"></div>
+    <div class="feedback" id="feedback"></div>
+    <div class="center" style="margin-top:10px">
+      <button class="btn primary big" id="btnNext" style="display:none">次へ</button>
+    </div>
+  </div>
+  <div class="center"><button class="btn" id="btnQuit">ラウンドをやめる</button></div>
+</section>
+
+<section id="view-result">
+  <div class="card">
+    <p class="result-sub" id="resStage"></p>
+    <div class="result-score" id="resScore"></div>
+    <div class="result-msg" id="resMsg"></div>
+    <div id="resNotices"></div>
+    <div class="center" style="margin-top:16px">
+      <button class="btn primary big" id="btnAgain">もう一度</button>
+      <button class="btn big" id="btnToMenu">ホームへ</button>
+    </div>
+  </div>
+</section>
+
+<section id="view-stats">
+  <h2>成績</h2>
+  <div class="stats-row" id="statTotals"></div>
+  <div class="card">
+    <h2 style="margin-top:0">ステージ進捗</h2>
+    <div id="statStages"></div>
+  </div>
+  <div class="card">
+    <h2 style="margin-top:0">インターバル正答率(上行 / 下行)</h2>
+    <p class="hint">赤いところが苦手。苦手な音程ほど多く出題されます。</p>
+    <div class="heat" id="heatGrid"></div>
+  </div>
+</section>
+
+</main>
+<script>
+'use strict';
+const $ = s => document.querySelector(s);
+const ri = n => Math.floor(Math.random() * n);
+const NOTE_NAMES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+const DOREMI = ['ド','ド#','レ','レ#','ミ','ファ','ファ#','ソ','ソ#','ラ','ラ#','シ'];
+const noteLabel = m => `${NOTE_NAMES[m%12]}(${DOREMI[m%12]})`;
+const TUNING = [64,59,55,50,45,40]; // 1弦E4 → 6弦E2
+const STRING_LABELS = ['1弦(E)','2弦(B)','3弦(G)','4弦(D)','5弦(A)','6弦(E)'];
+
+/* ---------- オーディオ(Karplus-Strong ギター風シンセ) ---------- */
+let ctx = null;
+const bufCache = new Map();
+function audio(){
+  if(!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
+  if(ctx.state === 'suspended') ctx.resume();
+  return ctx;
+}
+function getBuf(midi){
+  if(bufCache.has(midi)) return bufCache.get(midi);
+  const c = audio();
+  const sr = c.sampleRate;
+  const freq = 440 * Math.pow(2, (midi - 69) / 12);
+  const N = Math.max(2, Math.round(sr / freq));
+  const len = Math.floor(sr * 2.0);
+  const buf = c.createBuffer(1, len, sr);
+  const d = buf.getChannelData(0);
+  const ring = new Float32Array(N);
+  for(let i = 0; i < N; i++) ring[i] = Math.random() * 2 - 1;
+  let idx = 0;
+  for(let i = 0; i < len; i++){
+    const cur = ring[idx];
+    const nxt = ring[(idx + 1) % N];
+    d[i] = cur;
+    ring[idx] = 0.996 * 0.5 * (cur + nxt);
+    idx = (idx + 1) % N;
+  }
+  bufCache.set(midi, buf);
+  return buf;
+}
+function pluck(midi, when = 0, vol = 0.5){
+  try{
+    const c = audio();
+    const src = c.createBufferSource();
+    src.buffer = getBuf(midi);
+    const g = c.createGain();
+    g.gain.value = vol;
+    src.connect(g); g.connect(c.destination);
+    src.start(c.currentTime + when);
+  }catch(e){ /* オーディオ不可の環境でもUIは動かす */ }
+}
+function strum(midis, when = 0, vol = 0.32){
+  midis.forEach((m, i) => pluck(m, when + i * 0.055, vol));
+}
+
+/* ---------- データ定義 ---------- */
+const INTERVALS = {
+  1:{name:'短2度', hint:'ジョーズのテーマ'},
+  2:{name:'長2度', hint:'かえるのうた'},
+  3:{name:'短3度', hint:'グリーンスリーブス'},
+  4:{name:'長3度', hint:'聖者の行進'},
+  5:{name:'完全4度', hint:'結婚行進曲(ここに来て)'},
+  6:{name:'増4度', hint:'ザ・シンプソンズ'},
+  7:{name:'完全5度', hint:'きらきら星'},
+  8:{name:'短6度', hint:''},
+  9:{name:'長6度', hint:'マイ・ボニー'},
+  10:{name:'短7度', hint:'スター・トレック(旧)'},
+  11:{name:'長7度', hint:''},
+  12:{name:'オクターブ', hint:'虹の彼方に'},
+};
+const IV_UNLOCK = [7,1,4,5,3,2,9,8,10,11,6,12];
+const QUALITIES = [
+  {id:'maj',  name:'メジャー',        iv:[0,4,7,12]},
+  {id:'min',  name:'マイナー',        iv:[0,3,7,12]},
+  {id:'dom7', name:'セブンス(7)',     iv:[0,4,7,10]},
+  {id:'min7', name:'マイナー7',       iv:[0,3,7,10]},
+  {id:'maj7', name:'メジャー7',       iv:[0,4,7,11]},
+  {id:'sus4', name:'サスフォー(sus4)',iv:[0,5,7,12]},
+  {id:'dim',  name:'ディミニッシュ',  iv:[0,3,6,12]},
+];
+const ROMAN = ['I','ii','iii','IV','V','vi'];
+const DEG_SEMI = [0,2,4,5,7,9];
+const DEG_MINOR = [false,true,true,false,false,true];
+const PROGS = [
+  [1,4,5,1],[1,5,4,1],[1,1,4,5],
+  [1,5,6,4],[1,6,4,5],
+  [6,4,1,5],[1,4,2,5],
+];
+const progPool = lv => PROGS.slice(0, lv === 1 ? 3 : lv === 2 ? 5 : 7);
+const chordNotes = (keyRoot, d) => {
+  const r = keyRoot + DEG_SEMI[d-1];
+  return (DEG_MINOR[d-1] ? [0,3,7,12] : [0,4,7,12]).map(x => r + x);
+};
+const progLabel = p => p.map(d => ROMAN[d-1]).join(' → ');
+
+const STAGES = [
+  {id:'s1', title:'高低の判定',       desc:'2音どちらが高い?',            maxLevel:4},
+  {id:'s2', title:'インターバル',     desc:'2音の間隔を当てる',            maxLevel:6},
+  {id:'s3', title:'単音を指板で',     desc:'鳴った音を指板から探す',        maxLevel:4},
+  {id:'s4', title:'メロディ再現',     desc:'短いフレーズをなぞる',          maxLevel:4},
+  {id:'s5', title:'コードの響き',     desc:'メジャー? マイナー?',          maxLevel:6},
+  {id:'s6', title:'コード進行',       desc:'ディグリー(I-IV-V)を当てる',   maxLevel:3},
+];
+
+/* ---------- セーブデータ ---------- */
+const SAVE_KEY = 'earTrainerSave_v1';
+let state;
+function load(){
+  try{ state = JSON.parse(localStorage.getItem(SAVE_KEY)) || {}; }
+  catch(e){ state = {}; }
+  state.stages = state.stages || {};
+  STAGES.forEach(s => {
+    state.stages[s.id] = state.stages[s.id] || {level:1, best:0, rounds:0};
+  });
+  state.items = state.items || {};
+  state.streak = state.streak || {count:0, last:null};
+  state.totalN = state.totalN || 0;
+  state.totalC = state.totalC || 0;
+  state.unlocked = state.unlocked || 1;
+}
+function save(){
+  try{ localStorage.setItem(SAVE_KEY, JSON.stringify(state)); }catch(e){}
+}
+
+/* ---------- 適応型出題(苦手なものほど出やすい) ---------- */
+function statOf(key){ return state.items[key] || {n:0, c:0}; }
+function accOf(key){ const s = statOf(key); return (s.c + 1) / (s.n + 2); }
+function pickWeighted(arr, keyFn){
+  const ws = arr.map(a => 1 + 4 * (1 - accOf(keyFn(a))));
+  let r = Math.random() * ws.reduce((a,b) => a+b, 0);
+  for(let i = 0; i < arr.length; i++){ r -= ws[i]; if(r <= 0) return arr[i]; }
+  return arr[arr.length - 1];
+}
+function record(key, ok){
+  const s = state.items[key] || (state.items[key] = {n:0, c:0});
+  s.n++; if(ok) s.c++;
+  state.totalN++; if(ok) state.totalC++;
+}
+
+/* ---------- 問題生成 ---------- */
+function genQuestion(stageId, level){
+  switch(stageId){
+    case 's1': return genS1(level);
+    case 's2': return genS2(level);
+    case 's3': return genS3(level);
+    case 's4': return genS4(level);
+    case 's5': return genS5(level);
+    case 's6': return genS6(level);
+  }
+}
+function genS1(level){
+  const ranges = [[7,12],[4,7],[2,3],[1,1]];
+  const [lo,hi] = ranges[level-1];
+  const gap = lo + ri(hi - lo + 1);
+  const base = 45 + ri(76 - 45 - gap);
+  const up = Math.random() < 0.5;
+  const first = up ? base : base + gap;
+  const second = up ? base + gap : base;
+  return {
+    kind:'buttons',
+    text:'2つの音を聴いて、どちらが高いか答えよう',
+    play(){ pluck(first, 0); pluck(second, 0.9); },
+    options:[{label:'1音目が高い', value:'1'}, {label:'2音目が高い', value:'2'}],
+    correct: up ? '2' : '1',
+    correctLabel:(up ? '2音目' : '1音目') + `が高い(差は半音${gap}個分)`,
+    statKey:'s1:g' + gap,
+  };
+}
+function genS2(level){
+  const count = Math.min(12, 2 + (level - 1) * 2);
+  const unlocked = IV_UNLOCK.slice(0, count);
+  const dir = (level >= 2 && Math.random() < 0.5) ? -1 : 1;
+  const semi = pickWeighted(unlocked, s => 's2:' + s + (dir < 0 ? 'd' : 'u'));
+  let root = 52 + ri(14);
+  if(root + dir * semi < 40) root = 40 - dir * semi;
+  if(root + dir * semi > 76) root = 76 - dir * semi;
+  const iv = INTERVALS[semi];
+  const sorted = unlocked.slice().sort((a,b) => a-b);
+  return {
+    kind:'buttons',
+    text:(dir > 0 ? '上がる' : '下がる') + '2音のインターバル(間隔)は?',
+    play(){ pluck(root, 0); pluck(root + dir * semi, 0.9); },
+    options: sorted.map(s => ({label: INTERVALS[s].name, value: String(s)})),
+    correct: String(semi),
+    correctLabel: iv.name + (iv.hint ? `(例:${iv.hint})` : ''),
+    statKey:'s2:' + semi + (dir < 0 ? 'd' : 'u'),
+  };
+}
+function genS3(level){
+  const cfg = [{f:5,ref:true},{f:9,ref:true},{f:12,ref:true},{f:12,ref:false}][level-1];
+  const midis = new Set();
+  for(let s = 0; s < 6; s++) for(let f = 0; f <= cfg.f; f++) midis.add(TUNING[s] + f);
+  const target = pickWeighted([...midis], m => 's3:pc' + (m % 12));
+  return {
+    kind:'fret',
+    text: cfg.ref
+      ? '基準音 C(ド) のあとに鳴る音を指板から探そう(同じ高さの音ならどこを押してもOK)'
+      : '鳴った音を指板から探そう(基準音なし)',
+    play(){ if(cfg.ref){ pluck(48, 0); pluck(target, 1.1); } else pluck(target, 0); },
+    fretMax: cfg.f,
+    target,
+    correctLabel: noteLabel(target),
+    statKey:'s3:pc' + (target % 12),
+  };
+}
+function genS4(level){
+  const n = level + 1;
+  const melody = [50 + ri(13)];
+  while(melody.length < n){
+    const prev = melody[melody.length - 1];
+    let step = 0;
+    while(step === 0) step = ri(11) - 5;
+    const next = prev + step;
+    if(next >= 45 && next <= 72) melody.push(next);
+  }
+  return {
+    kind:'melody',
+    text:`${n}音のフレーズを再現しよう(最初の音は指板に表示。続きを順にタップ)`,
+    play(){ melody.forEach((m, i) => pluck(m, i * 0.6)); },
+    fretMax: 12,
+    melody,
+    correctLabel: melody.map(noteLabel).join(' → '),
+    statKey:'s4:len' + n,
+  };
+}
+function genS5(level){
+  const count = Math.min(QUALITIES.length, 2 + (level - 1));
+  const unlocked = QUALITIES.slice(0, count);
+  const qual = pickWeighted(unlocked, q => 's5:' + q.id);
+  const root = 48 + ri(12);
+  return {
+    kind:'buttons',
+    text:'コードの響きの種類は?',
+    play(){ strum(qual.iv.map(i => root + i)); },
+    options: unlocked.map(q => ({label:q.name, value:q.id})),
+    correct: qual.id,
+    correctLabel: qual.name,
+    statKey:'s5:' + qual.id,
+  };
+}
+function genS6(level){
+  const pool = progPool(level);
+  const prog = pickWeighted(pool, p => 's6:' + p.join(''));
+  const keyRoot = 45 + ri(8);
+  const others = pool.filter(p => p.join('') !== prog.join(''));
+  for(let i = others.length - 1; i > 0; i--){
+    const j = ri(i + 1); [others[i], others[j]] = [others[j], others[i]];
+  }
+  const opts = [prog, ...others.slice(0, 2)];
+  for(let i = opts.length - 1; i > 0; i--){
+    const j = ri(i + 1); [opts[i], opts[j]] = [opts[j], opts[i]];
+  }
+  return {
+    kind:'buttons',
+    text:'最初にキーの I を1回鳴らします。そのあとの4つのコード進行を当てよう',
+    play(){
+      strum(chordNotes(keyRoot, 1), 0);
+      prog.forEach((d, i) => strum(chordNotes(keyRoot, d), 1.6 + i * 1.0));
+    },
+    options: opts.map(p => ({label: progLabel(p), value: p.join('-')})),
+    correct: prog.join('-'),
+    correctLabel: progLabel(prog),
+    statKey:'s6:' + prog.join(''),
+  };
+}
+
+/* ---------- 画面切り替え ---------- */
+function show(id){
+  document.querySelectorAll('section').forEach(s => s.classList.remove('active'));
+  $('#' + id).classList.add('active');
+}
+
+/* ---------- メニュー ---------- */
+function renderMenu(){
+  const list = $('#stageList');
+  list.innerHTML = '';
+  STAGES.forEach((st, i) => {
+    const ss = state.stages[st.id];
+    const locked = i + 1 > state.unlocked;
+    const div = document.createElement('div');
+    div.className = 'card stage-card' + (locked ? ' locked' : '');
+    const lvBadge = ss.level >= st.maxLevel
+      ? '<span class="lv-badge max">Lv MAX</span>'
+      : `<span class="lv-badge">Lv ${ss.level}/${st.maxLevel}</span>`;
+    div.innerHTML = `
+      <div class="stage-num">${i + 1}</div>
+      <div class="stage-info">
+        <div class="stage-title">${st.title}</div>
+        <div class="stage-desc">${st.desc}</div>
+      </div>
+      <div class="stage-meta">${locked ? 'ロック中' : lvBadge + `<br>ベスト ${ss.best}/10`}</div>`;
+    if(!locked) div.addEventListener('click', () => startRound(i));
+    list.appendChild(div);
+  });
+  const goal = document.createElement('div');
+  goal.className = 'card stage-card goal locked';
+  goal.style.opacity = state.unlocked > STAGES.length - 1 ? 1 : 0.5;
+  goal.innerHTML = `
+    <div class="stage-num">★</div>
+    <div class="stage-info">
+      <div class="stage-title">ゴール:曲の耳コピ</div>
+      <div class="stage-desc">将来ここに耳コピワークベンチ(音源ループ+スロー再生)が入る予定</div>
+    </div>`;
+  list.appendChild(goal);
+  $('#streakBadge').textContent = `🔥 ${state.streak.count}日`;
+}
+
+/* ---------- ラウンド進行 ---------- */
+const TOTAL_Q = 10;
+let round = null;
+
+function startRound(stageIdx){
+  audio(); // ユーザー操作起点でAudioContextを起こす
+  const st = STAGES[stageIdx];
+  round = {stageIdx, stage:st, level:state.stages[st.id].level,
+           i:0, score:0, combo:0, maxCombo:0, answered:false, q:null};
+  show('view-game');
+  nextQuestion();
+}
+function nextQuestion(){
+  const r = round;
+  r.answered = false;
+  r.q = genQuestion(r.stage.id, r.level);
+  $('#qStage').textContent = `ステージ${r.stageIdx + 1}:${r.stage.title}(Lv${r.level})`;
+  $('#qNum').textContent = `第${r.i + 1}問 / ${TOTAL_Q}`;
+  $('#qCombo').textContent = r.combo >= 2 ? `${r.combo}連続!` : '';
+  $('#qProg').style.width = (r.i / TOTAL_Q * 100) + '%';
+  $('#qText').textContent = r.q.text;
+  $('#feedback').className = 'feedback';
+  $('#btnNext').style.display = 'none';
+  renderAnswerArea(r.q);
+  setTimeout(() => r.q.play(), 350);
+}
+function renderAnswerArea(q){
+  const area = $('#answerArea');
+  area.innerHTML = '';
+  if(q.kind === 'buttons'){
+    const wrap = document.createElement('div');
+    wrap.className = 'answers';
+    q.options.forEach(o => {
+      const b = document.createElement('button');
+      b.className = 'btn';
+      b.textContent = o.label;
+      b.dataset.value = o.value;
+      b.addEventListener('click', () => answerButtons(o.value, b));
+      wrap.appendChild(b);
+    });
+    area.appendChild(wrap);
+  }else{
+    area.appendChild(buildFretboard(q));
+  }
+}
+function answerButtons(value, btn){
+  const r = round;
+  if(r.answered) return;
+  r.answered = true;
+  const ok = value === r.q.correct;
+  document.querySelectorAll('#answerArea .btn').forEach(b => {
+    b.disabled = true;
+    if(b.dataset.value === r.q.correct) b.classList.add('correct');
+    else if(b === btn && !ok) b.classList.add('wrong');
+  });
+  finishAnswer(ok);
+}
+function finishAnswer(ok){
+  const r = round;
+  record(r.q.statKey, ok);
+  if(ok){ r.score++; r.combo++; r.maxCombo = Math.max(r.maxCombo, r.combo); }
+  else r.combo = 0;
+  const fb = $('#feedback');
+  fb.className = 'feedback ' + (ok ? 'ok' : 'ng');
+  fb.textContent = ok
+    ? `⭕ 正解! ${r.q.correctLabel}`
+    : `✕ 正解は「${r.q.correctLabel}」。もう一度聴いて確かめよう`;
+  if(!ok) setTimeout(() => r.q.play(), 700);
+  $('#btnNext').style.display = 'inline-block';
+  save();
+}
+
+/* ---------- 指板 ---------- */
+function buildFretboard(q){
+  const frag = document.createDocumentFragment();
+  if(q.kind === 'melody'){
+    const dots = document.createElement('div');
+    dots.className = 'melody-dots';
+    dots.id = 'melodyDots';
+    frag.appendChild(dots);
+    q.input = [q.melody[0]];
+    const reset = document.createElement('button');
+    reset.className = 'btn';
+    reset.textContent = '入力をやり直す';
+    reset.style.marginBottom = '4px';
+    reset.addEventListener('click', () => {
+      if(round.answered) return;
+      q.input = [q.melody[0]];
+      updateMelodyDots(q);
+    });
+    frag.appendChild(reset);
+  }
+  const wrap = document.createElement('div');
+  wrap.className = 'fret-wrap';
+  const tbl = document.createElement('table');
+  tbl.className = 'fret';
+  const head = document.createElement('tr');
+  head.innerHTML = '<th></th>' + Array.from({length: q.fretMax + 1},
+    (_, f) => `<th>${f}${[3,5,7,9,12].includes(f) ? '<br>●' : ''}</th>`).join('');
+  tbl.appendChild(head);
+  for(let s = 0; s < 6; s++){
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td class="slabel">${STRING_LABELS[s]}</td>`;
+    for(let f = 0; f <= q.fretMax; f++){
+      const td = document.createElement('td');
+      const midi = TUNING[s] + f;
+      td.dataset.midi = midi;
+      td.title = noteLabel(midi) + (Math.floor(midi/12) - 1);
+      if(f === 0) td.classList.add('nut');
+      if(q.kind === 'melody' && midi === q.melody[0] && s === anchorString(q.melody[0])){
+        td.classList.add('hl-anchor');
+        td.textContent = '開始';
+      }
+      td.addEventListener('click', () => fretClick(q, midi, td));
+      tr.appendChild(td);
+    }
+    tbl.appendChild(tr);
+  }
+  wrap.appendChild(tbl);
+  frag.appendChild(wrap);
+  if(q.kind === 'melody') setTimeout(() => updateMelodyDots(q), 0);
+  return frag;
+}
+function anchorString(midi){
+  for(let s = 5; s >= 0; s--){
+    if(midi >= TUNING[s] && midi <= TUNING[s] + 12) return s;
+  }
+  return 0;
+}
+function fretClick(q, midi, td){
+  if(round.answered) return;
+  pluck(midi, 0, 0.45);
+  if(q.kind === 'fret'){
+    round.answered = true;
+    const ok = midi === q.target;
+    document.querySelectorAll('#answerArea td[data-midi]').forEach(c => {
+      if(+c.dataset.midi === q.target) c.classList.add('hl-correct');
+    });
+    if(!ok) td.classList.add('hl-wrong');
+    finishAnswer(ok);
+  }else if(q.kind === 'melody'){
+    q.input.push(midi);
+    updateMelodyDots(q);
+    if(q.input.length >= q.melody.length){
+      round.answered = true;
+      const ok = q.input.every((m, i) => m === q.melody[i]);
+      finishAnswer(ok);
+    }
+  }
+}
+function updateMelodyDots(q){
+  const dots = $('#melodyDots');
+  if(!dots) return;
+  dots.innerHTML = q.melody.map((_, i) => {
+    if(i === 0) return '<span class="mdot given"></span>';
+    return `<span class="mdot${i < q.input.length ? ' filled' : ''}"></span>`;
+  }).join('');
+}
+
+/* ---------- ラウンド終了 ---------- */
+function endRound(){
+  const r = round;
+  const st = r.stage;
+  const ss = state.stages[st.id];
+  ss.rounds++;
+  ss.best = Math.max(ss.best, r.score);
+  const notices = [];
+  if(r.score >= 8 && ss.level < st.maxLevel){
+    ss.level++;
+    notices.push(`⬆ レベルアップ! ${st.title} Lv${ss.level}`);
+  }else if(r.score <= 4 && ss.level > 1){
+    ss.level--;
+    notices.push(`レベルを${ss.level}に調整しました(焦らずいこう)`);
+  }
+  if(r.score >= 8 && r.stageIdx + 2 > state.unlocked && r.stageIdx + 1 < STAGES.length && ss.level >= 2){
+    state.unlocked = r.stageIdx + 2;
+    notices.push(`🔓 新ステージ解放:${STAGES[r.stageIdx + 1].title}`);
+  }
+  updateStreak(notices);
+  save();
+  $('#resStage').textContent = `ステージ${r.stageIdx + 1}:${st.title}`;
+  $('#resScore').textContent = `${r.score} / ${TOTAL_Q}`;
+  $('#resMsg').textContent =
+    r.score === 10 ? 'パーフェクト! 🎉' :
+    r.score >= 8 ? 'すばらしい!' :
+    r.score >= 6 ? 'いい調子!' : '耳は少しずつ育ちます。続けよう';
+  $('#resNotices').innerHTML = notices.map(n => `<div class="notice">${n}</div>`).join('')
+    + (r.maxCombo >= 3 ? `<p class="result-sub">最大${r.maxCombo}連続正解</p>` : '');
+  show('view-result');
+}
+function updateStreak(notices){
+  const today = new Date().toISOString().slice(0, 10);
+  const last = state.streak.last;
+  if(last === today) return;
+  const y = new Date(Date.now() - 864e5).toISOString().slice(0, 10);
+  state.streak.count = (last === y) ? state.streak.count + 1 : 1;
+  state.streak.last = today;
+  if(state.streak.count >= 2) notices.push(`🔥 ${state.streak.count}日連続プレイ!`);
+}
+
+/* ---------- 成績画面 ---------- */
+function renderStats(){
+  const rate = state.totalN ? Math.round(state.totalC / state.totalN * 100) : 0;
+  $('#statTotals').innerHTML = `
+    <div class="stat-box"><div class="num">${state.totalN}</div><div class="lab">総回答数</div></div>
+    <div class="stat-box"><div class="num">${rate}%</div><div class="lab">通算正答率</div></div>
+    <div class="stat-box"><div class="num">${state.streak.count}日</div><div class="lab">連続プレイ</div></div>`;
+  $('#statStages').innerHTML = STAGES.map((st, i) => {
+    const ss = state.stages[st.id];
+    const locked = i + 1 > state.unlocked;
+    return `<p style="margin:6px 0">${i + 1}. ${st.title} — ${locked ? 'ロック中' : `Lv${ss.level}/${st.maxLevel}(${ss.rounds}ラウンド、ベスト${ss.best}/10)`}</p>`;
+  }).join('');
+  const grid = $('#heatGrid');
+  let html = '<div class="hlabel"></div><div class="hlabel">上行 ↑</div><div class="hlabel">下行 ↓</div>';
+  for(const s of Object.keys(INTERVALS)){
+    html += `<div class="hlabel">${INTERVALS[s].name}</div>`;
+    for(const d of ['u','d']){
+      const st = statOf('s2:' + s + d);
+      if(st.n === 0){
+        html += '<div class="hcell" style="background:#EFECE4;color:#B4B2A9">—</div>';
+      }else{
+        const a = Math.round(st.c / st.n * 100);
+        const bg = a >= 80 ? 'var(--green-light)' : a >= 50 ? 'var(--amber-light)' : 'var(--red-light)';
+        const col = a >= 80 ? 'var(--green)' : a >= 50 ? '#854F0B' : 'var(--red)';
+        html += `<div class="hcell" style="background:${bg};color:${col}">${a}%</div>`;
+      }
+    }
+  }
+  grid.innerHTML = html;
+}
+
+/* ---------- イベント ---------- */
+$('#btnReplay').addEventListener('click', () => round && round.q.play());
+$('#btnNext').addEventListener('click', () => {
+  round.i++;
+  if(round.i >= TOTAL_Q) endRound();
+  else nextQuestion();
+});
+$('#btnQuit').addEventListener('click', () => { renderMenu(); show('view-menu'); });
+$('#btnAgain').addEventListener('click', () => startRound(round.stageIdx));
+$('#btnToMenu').addEventListener('click', () => { renderMenu(); show('view-menu'); });
+$('#navHome').addEventListener('click', () => { renderMenu(); show('view-menu'); });
+$('#navStats').addEventListener('click', () => { renderStats(); show('view-stats'); });
+
+load();
+renderMenu();
+</script>
+</body>
+</html>
