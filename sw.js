@@ -1,5 +1,5 @@
 // ソルフェ道場 service worker — アプリ本体はネット優先(更新をすぐ反映)、音源・アイコンはキャッシュ優先(オフライン対応)
-const VERSION = 'v2';
+const VERSION = 'v3';
 const CORE = ['./', './index.html', './manifest.webmanifest', './icons/icon-192.png', './icons/icon-512.png', './icons/apple-touch-icon.png'];
 
 self.addEventListener('install', e => {
