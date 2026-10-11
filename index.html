@@ -210,6 +210,8 @@ body.in-game .tabbar{display:none}
 .staff-wrap svg{background:var(--card2);border-radius:12px}
 
 /* マイク */
+.mic-err{background:var(--accent-soft);border-radius:12px;padding:10px 12px;text-align:left;line-height:1.6}
+.mic-err ol li{margin:4px 0}
 .mic-box{background:var(--card2);border-radius:14px;padding:14px;margin:10px 0}
 .mic-targets{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-bottom:12px}
 .mic-t{min-width:60px;height:60px;border-radius:14px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-weight:800;font-size:18px;color:#fff;opacity:.45;border:3px solid transparent;line-height:1.1}
@@ -840,24 +842,59 @@ const MIC = {stream:null, an:null, buf:null, timer:0, cb:null, hist:[]};
 function micSupported(){ return !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia) && window.isSecureContext !== false; }
 async function micStart(cb){
   const c = ac();
-  if(!micSupported()) throw new Error('unsupported');
+  if(!micSupported()){ const e = new Error('unsupported'); e.name = 'Unsupported'; throw e; }
+  // iOS がバックグラウンド移行などでマイクを止めていたら取り直す
+  if(MIC.stream && MIC.stream.getAudioTracks().some(t => t.readyState === 'ended')) micStop();
   if(!MIC.stream){
-    MIC.stream = await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false, noiseSuppression:false, autoGainControl:false}});
+    // iPhone(Safari)は audioSession が「playback」のままだと録音を拒否するので、先に切り替える
+    setSession('play-and-record');
+    let stream;
+    try{
+      stream = await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false, noiseSuppression:false, autoGainControl:false}});
+    }catch(e){
+      if(e.name === 'OverconstrainedError' || e.name === 'TypeError'){
+        try{ stream = await navigator.mediaDevices.getUserMedia({audio:true}); }
+        catch(e2){ setSession('playback'); throw e2; }
+      }else{ setSession('playback'); throw e; }
+    }
+    MIC.stream = stream;
     const src = c.createMediaStreamSource(MIC.stream);
     MIC.an = c.createAnalyser();
     MIC.an.fftSize = 2048;
     src.connect(MIC.an);
     MIC.buf = new Float32Array(MIC.an.fftSize);
+    if(c.state !== 'running') c.resume();      // 許可ダイアログの後に止まることがある
   }
-  setSession('play-and-record');
   MIC.cb = cb;
   MIC.hist = [];
   clearInterval(MIC.timer);
   MIC.timer = setInterval(micTick, 45);
 }
+// 判定だけ止めてマイクは開いたままにする(1問ごとに許可を求めないため)
+function micPause(){ clearInterval(MIC.timer); MIC.timer = 0; MIC.cb = null; }
 function micStop(){
-  clearInterval(MIC.timer); MIC.timer = 0; MIC.cb = null;
+  micPause();
   if(MIC.stream){ MIC.stream.getTracks().forEach(t => t.stop()); MIC.stream = null; MIC.an = null; setSession('playback'); }
+}
+// 失敗理由ごとの案内(とくに iPhone)
+function micErrorHTML(e){
+  const n = (e && e.name) || '';
+  const ios = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const standalone = window.navigator.standalone || matchMedia('(display-mode: standalone)').matches;
+  if(n === 'Unsupported') return `<b>この開き方ではマイクが使えません。</b><br>公開版(https://〜)で開いてください。`;
+  if(n === 'NotReadableError' || n === 'AbortError') return `<b>ほかのアプリがマイクを使っています。</b><br>通話・録音アプリ・Bluetooth機器を終了してから「もう一度試す」を押してください。`;
+  if(n === 'NotFoundError') return `<b>マイクが見つかりません。</b><br>マイク付きイヤホンを抜き差しするか、端末のマイクを確認してください。`;
+  if(n === 'NotAllowedError' || n === 'SecurityError'){
+    if(ios) return `<b>マイクが「許可」されていません。</b>次のどれかで許可してから「もう一度試す」を押してください。
+      <ol style="margin:6px 0 0 18px;text-align:left">
+      <li>Safariで開いている場合:アドレスバー左の <b>「ぁあ」(AA)</b> →「<b>Webサイトの設定</b>」→「<b>マイク</b>」を「<b>許可</b>」または「確認」</li>
+      <li>設定アプリ →「<b>アプリ</b>」→「<b>Safari</b>」→「<b>マイク</b>」を「確認」または「許可」(iOS 17以前は 設定 →「Safari」→「マイク」)</li>
+      <li>設定アプリ →「スクリーンタイム」→「コンテンツとプライバシーの制限」→「マイク」が「許可」になっているか確認</li>
+      ${standalone ? '<li>ホーム画面から開いたアプリで許可が出ない場合は、いったん <b>Safariで同じURLを開いて</b>お試しください</li>' : ''}
+      </ol>`;
+    return `<b>マイクが「許可」されていません。</b><br>アドレスバーの鍵(またはカメラ)アイコンから、このサイトのマイクを「許可」にして「もう一度試す」を押してください。`;
+  }
+  return `<b>マイクを開始できませんでした</b>(${esc(n || (e && e.message) || '不明なエラー')})。<br>ページを再読み込みしてもう一度お試しください。`;
 }
 function micTick(){
   if(!MIC.an || !MIC.cb) return;
@@ -2023,7 +2060,7 @@ function nextQ(){
   const r = round;
   r.answered = false; r.hinted = false; r.seq = null;
   hideFb();
-  micStop(); droneStop();
+  micPause(); droneStop();
   const g = pick(r.gens);
   r.q = GEN[g.gen](g.p, g.ctx || {});
   r.q.from = g.from;
@@ -2172,7 +2209,7 @@ function renderMic(q, area){
   drawMicTargets();
   $('#micDrone').onclick = () => { if(AE.drone) droneStop(); else droneStart(m.tonic); $('#micDrone').classList.toggle('primary', !!AE.drone); };
   $('#micHint').onclick = () => { round.hinted = true; stopAll(); const i = round.mic.idx; note(m.ms[i], 0); $('#micHint').textContent = '💡 ヒント使用'; };
-  $('#micGive').onclick = () => { if(round.answered) return; round.answered = true; micStop(); droneStop(); finish(false); };
+  $('#micGive').onclick = () => { if(round.answered) return; round.answered = true; micPause(); droneStop(); finish(false); };
   micStart(micFrame).catch(err => micFallback(q, err));
 }
 function drawMicTargets(){
@@ -2215,7 +2252,7 @@ function micFrame(midi, why){
     sfx('ok');
     drawMicTargets();
     if(st.idx >= m.ms.length){
-      r.answered = true; micStop(); droneStop();
+      r.answered = true; micPause(); droneStop();
       if(!r.hinted) state.totals.mic++;
       finish(!r.hinted, r.hinted ? '(ヒント使用のため不正解扱い)' : '');
     }
@@ -2224,15 +2261,17 @@ function micFrame(midi, why){
 // マイクが使えない環境:自己採点
 function micFallback(q, err){
   const area = $('#gAnswer');
-  const reason = !micSupported() ? 'この開き方(file:// など)ではマイクが使えません。' : 'マイクの許可が得られませんでした。';
   area.querySelector('.mic-box').innerHTML = `
     <div class="mic-targets" id="micT"></div>
-    <p class="small muted">${reason}<b>自己採点モード</b>:歌う(弾く)→「答え合わせ」でお手本を聴いて、合っていたか自分で判定してください。</p>
+    <div class="mic-err small">${micErrorHTML(err)}</div>
+    <div class="row wrap" style="margin-top:8px"><button class="btn" id="micRetry">🎤 もう一度試す</button></div>
+    <p class="small muted" style="margin-top:8px">マイクなしで続ける場合は<b>自己採点モード</b>:歌う(弾く)→「答え合わせ」でお手本を聴いて、合っていたか自分で判定してください。</p>
     <div class="row wrap" style="margin-top:8px"><button class="btn primary" id="selfCheck">🔊 答え合わせ</button></div>
     <div class="row wrap hidden" id="selfJudge" style="margin-top:8px"><button class="btn" id="selfOk">⭕ 合っていた</button><button class="btn" id="selfNg">❌ ずれていた</button></div>`;
   round.mic.idx = q.mic.show ? 0 : 0;
   drawMicTargets();
   $('#micHint').classList.add('hidden');
+  $('#micRetry').onclick = () => { if(round.answered) return; renderAnswer(q); };
   $('#selfCheck').onclick = () => { stopAll(); playSeq(q.mic.ms, 0, 0.6); $('#selfJudge').classList.remove('hidden'); round.mic.idx = q.mic.ms.length; drawMicTargets(); };
   $('#selfOk').onclick = () => { if(round.answered) return; round.answered = true; finish(true, '(自己採点)', true); };
   $('#selfNg').onclick = () => { if(round.answered) return; round.answered = true; finish(false, '(自己採点)', true); };
@@ -3402,7 +3441,7 @@ async function startVoice(id){
   buildVPlay();
   try{ await micStart(vFrame); }
   catch(e){
-    $('#vMsg').innerHTML = `<b style="color:var(--bad)">マイクを使えませんでした</b><br><span class="small">ブラウザの設定でこのサイトのマイクを「許可」にしてから、もう一度お試しください。</span>`;
+    $('#vMsg').innerHTML = `<div class="mic-err small">${micErrorHTML(e)}</div><div class="row wrap" style="justify-content:center;margin-top:10px"><button class="btn primary" onclick="startVoice('${id}')">🎤 もう一度試す</button><button class="btn" onclick="micTest()">マイクのテスト</button></div>`;
     return;
   }
   VG.raf = requestAnimationFrame(vDraw);
@@ -4175,6 +4214,35 @@ function voiceStatsHTML(){
   </div><p class="small muted" style="margin-top:6px">直近 ${rec.length} 音の集計</p></div>`;
 }
 
+/* ---------- マイクのテスト ---------- */
+function micTest(){
+  if(VG){ VG.alive = false; cancelAnimationFrame(VG.raf); VG = null; document.body.classList.remove('in-game'); }
+  openSheet(`
+    <div class="sheet-head"><h3>🎤 マイクのテスト</h3><button class="icon-btn" onclick="micStop();closeSheet()">✕</button></div>
+    <p class="small">「開始」を押すと、マイクの許可を求められます。<b>「許可」</b>を押して、「ラー」と声を出してみてください。</p>
+    <div class="center" style="margin:12px 0"><button class="btn primary big" id="mtGo">開始</button></div>
+    <div id="mtOut" class="mic-err small" style="display:none"></div>
+    <div class="meter" style="margin-top:10px"><div class="needle" id="mtLvl" style="opacity:1;left:0;width:0;margin-left:0;transition:width .05s"></div></div>
+    <div class="center" style="font-size:28px;font-weight:900;margin:10px 0" id="mtNote">—</div>
+    <p class="small muted center">バーが動き、音名が表示されればマイクは正常です。</p>`);
+  $('#mtGo').onclick = async () => {
+    const out = $('#mtOut');
+    try{
+      await micStart(m => {
+        const n = $('#mtNote'); if(!n){ micStop(); return; }
+        n.textContent = m === null ? '…' : `${fmtSpellPlain(spell(Math.round(m)), 'abc')}${Math.floor(Math.round(m) / 12) - 1}(${Math.round((m - Math.round(m)) * 100)}¢)`;
+        const d = MIC.buf; let r = 0; for(let i = 0; i < d.length; i++) r += d[i] * d[i];
+        $('#mtLvl').style.width = Math.min(100, Math.sqrt(r / d.length) * 600) + '%';
+      });
+      out.style.display = 'block'; out.innerHTML = '✅ マイクが使えます。声を出してください。';
+      $('#mtGo').textContent = '再開始';
+    }catch(e){
+      out.style.display = 'block'; out.innerHTML = micErrorHTML(e);
+      $('#mtGo').textContent = 'もう一度試す';
+    }
+  };
+}
+
 /* ---------- 設定 ---------- */
 function renderSettings(){
   const s = S();
@@ -4188,6 +4256,7 @@ function renderSettings(){
       <div class="set-row"><div class="sl">キーの聴かせ方<small>問題の前に鳴らす基準</small></div>${seg('ref', [['scale','ドレミファソラシド'],['both','＋主和音'],['cadence','カデンツ']])}</div>
       <div class="set-row"><div class="sl">音量</div><input type="range" min="0.1" max="1.5" step="0.05" value="${s.volume}" id="setVol"></div>
       <div class="set-row"><div class="sl">メロディの速さ</div>${seg('tempo', [['1.3','ゆっくり'],['1','ふつう'],['0.8','速い']])}</div>
+      <div class="set-row"><div class="sl">マイク<small>視唱・発声コースで使用</small></div><button class="btn sm" onclick="micTest()">🎤 マイクのテスト</button></div>
       <div class="set-row"><div class="sl">効果音</div><input type="checkbox" id="setSfx" ${s.sfx ? 'checked' : ''}></div>
       <div class="set-row"><div class="sl">正解したら自動で次へ</div><input type="checkbox" id="setAuto" ${s.autoNext ? 'checked' : ''}></div>
       <div class="set-row"><div class="sl">1日の目標</div>${seg('goal', [['30','気軽 30'],['60','標準 60'],['100','本気 100'],['150','鬼 150']])}</div>
@@ -4267,7 +4336,10 @@ function openSheet(html){
   $('#modal').classList.remove('hidden');
   $('#sheet').scrollTop = 0;
 }
-function closeSheet(){ $('#modal').classList.add('hidden'); }
+function closeSheet(){
+  $('#modal').classList.add('hidden');
+  if(!VG && !(round && round.q && round.q.mic) && MIC.stream) micStop();
+}
 
 /* =====================================================================
    イベント・起動
