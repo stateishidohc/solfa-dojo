@@ -404,7 +404,13 @@ input[type=checkbox]{accent-color:var(--brand);width:20px;height:20px}
 .vmsg{text-align:center;min-height:58px;margin:8px 0;font-size:15px;line-height:1.5}
 .vcv-wrap{position:relative;height:260px}
 #vCanvas{position:absolute;inset:0;width:100%;height:100%;border-radius:14px;background:var(--card);border:1px solid var(--border)}
-.vnow{position:absolute;right:10px;top:8px;font-size:14px;background:var(--card);padding:2px 8px;border-radius:8px}
+.vnow{position:absolute;left:50%;transform:translateX(-50%);bottom:8px;font-size:14px;background:var(--card);padding:2px 8px;border-radius:8px}
+.vhint{text-align:center;font-size:19px;font-weight:800;min-height:52px;margin:0 0 8px;padding:10px 12px;border-radius:14px;background:var(--card2);color:var(--muted);line-height:1.35;transition:background .15s,color .15s}
+.vhint small{font-size:13px;font-weight:600}
+.vhint.just{background:rgba(63,191,106,.18);color:#2E8B4E}
+.vhint.near{background:rgba(63,191,106,.10);color:#3B8F58}
+.vhint.high{background:rgba(229,86,75,.13);color:#C8473D}
+.vhint.low{background:rgba(76,155,234,.14);color:#2F72C0}
 .vrow{display:flex;align-items:center;gap:8px;padding:5px 0;border-top:1px solid var(--border)}
 .vbar{position:relative;flex:1;height:22px;background:var(--card2);border-radius:6px;overflow:hidden}
 .vbar i{position:absolute;top:0;bottom:0}
@@ -961,7 +967,7 @@ function load(){
   state.read = state.read || {};
   state.rhythm = Object.assign({calibMs:0, calibrated:false, diff:'normal', du:false, speed:1, recent:[]}, state.rhythm || {});
   state.arcade = Object.assign({hero:{}, heroClear:{}, echo:null, surv:null, rush:null, rushLv:0, slow:false}, state.arcade || {});
-  state.voice = Object.assign({high:false, recent:[]}, state.voice || {});
+  state.voice = Object.assign({high:false, recent:[], key:'C', easy:true}, state.voice || {});
   state.created = state.created || todayStr();
 }
 function save(){ try{ localStorage.setItem(SAVE_KEY, JSON.stringify(state)); }catch(e){} }
@@ -1825,7 +1831,7 @@ const GEN = {
 
   /* ---- 視唱・弾き返し ---- */
   sing(p){
-    const tonic = keyTonic(p.key), kpc = mod(tonic, 12);
+    const tonic = 48 + voiceKpc(), kpc = mod(tonic, 12);
     const offs = p.pool ? genMelody(p.pool, p.len, 2, 'tonic') : [pickWeighted(p.set, s => 'sing:' + s)];
     const ms = offs.map(o => tonic + o);
     return {
@@ -1840,7 +1846,7 @@ const GEN = {
     };
   },
   echo(p){
-    const tonic = keyTonic(p.key), kpc = mod(tonic, 12);
+    const tonic = 48 + voiceKpc(), kpc = mod(tonic, 12);
     const offs = p.pool ? genMelody(p.pool, p.len, 2, 'tonic') : [pickWeighted(p.set, s => 'echo:' + s)];
     const ms = offs.map(o => tonic + o);
     return {
@@ -3409,8 +3415,12 @@ function renderArcade(){
    ===================================================================== */
 let VG = null;
 const VHOLD = 1.1;                 // 何秒ぶん「正しい付近」の声を集めたら採点するか
-const VTIMEOUT = 9000;             // 1音あたりの制限(ms)
+const VTIMEOUT = 9000;             // 1音あたりの制限(ms)。やさしいモードは長め
+const VKEYS = {C:0, D:2, E:4, F:5, G:7, A:9};
 function voiceTonic(kpc){ return 48 + kpc + (state.voice.high ? 12 : 0); }
+// 声のレッスンのキー:標準は C 固定。設定で D〜A 固定またはランダム
+function voiceKpc(){ return state.voice.key === 'rand' ? ri(12) : (VKEYS[state.voice.key] ?? 0); }
+function voiceKeyLabel(kpc){ return `キー ${keyName(kpc)}${state.voice.key === 'rand' ? '(ランダム)' : '(固定)'}`; }
 function vLabel(semi){ const s = mod(semi, 12); return SOLFA[s] + (semi >= 12 ? '↑' : semi < 0 ? '↓' : ''); }
 function openVLesson(id){
   const l = LESSONS[id], ls = state.lessons[id] || {};
@@ -3420,7 +3430,11 @@ function openVLesson(id){
     <div class="res-stars" style="font-size:28px">${[1,2,3].map(i => `<span class="${i <= (ls.stars || 0) ? '' : 'off'}">★</span>`).join('')}</div>
     <p style="margin:6px 0 10px">${l.d}</p>
     <div class="small muted">ベスト ${ls.best || 0} 点 ・ プレイ ${ls.plays || 0}回 ・ 平均65点で★1、80点で★2、90点で★3</div>
-    <div class="set-row" style="margin-top:8px"><div class="sl">お手本の高さ<small>自分の声に近い高さを選ぶ(判定はオクターブ不問)</small></div>
+    <div class="set-row" style="margin-top:8px"><div class="sl">キー<small>慣れるまでは C(ド=C)固定がおすすめ</small></div>
+      <div class="seg">${[...Object.keys(VKEYS), 'rand'].map(k => `<button class="${state.voice.key === k ? 'on' : ''}" onclick="state.voice.key='${k}';save();openVLesson('${id}')">${k === 'rand' ? 'ランダム' : k}</button>`).join('')}</div></div>
+    <div class="set-row"><div class="sl">お手本<small>やさしい=毎回、目標の音を先に鳴らす</small></div>
+      <div class="seg"><button class="${state.voice.easy ? 'on' : ''}" onclick="state.voice.easy=true;save();openVLesson('${id}')">毎回鳴らす(やさしい)</button><button class="${state.voice.easy ? '' : 'on'}" onclick="state.voice.easy=false;save();openVLesson('${id}')">レッスンどおり</button></div></div>
+    <div class="set-row"><div class="sl">お手本の高さ<small>自分の声に近い高さを選ぶ(判定はオクターブ不問)</small></div>
       <div class="seg"><button class="${state.voice.high ? '' : 'on'}" onclick="state.voice.high=false;save();openVLesson('${id}')">低め(男声)</button><button class="${state.voice.high ? 'on' : ''}" onclick="state.voice.high=true;save();openVLesson('${id}')">高め(女声)</button></div></div>
     ${micSupported() ? '<div class="notice" style="text-align:left;font-weight:400;font-size:13px">🎤 マイクを使います。静かな場所で、<b>イヤホン推奨</b>(お手本の音をマイクが拾わないため)。「ラー」やハミングでOK。</div>'
                      : '<div class="notice" style="text-align:left;font-weight:400;font-size:13px">⚠️ この開き方ではマイクが使えません。公開版(https)で開いてください。</div>'}
@@ -3432,7 +3446,7 @@ function openVLesson(id){
 async function startVoice(id){
   const l = LESSONS[id], v = l.voice;
   ac(); stopAll(); droneStop();
-  const kpc = ri(12);
+  const kpc = voiceKpc();
   const seq = v.seq();
   const targets = seq.map(s => v.harm ? {guide:s, semi:harmUp(s)} : {semi:s});
   VG = {l, v, kpc, tonic:voiceTonic(kpc), minor:!!v.minor, targets, i:-1, phase:'init', res:[], trace:[], samples:[], voiced:0, hold:v.hold || VHOLD, alive:true};
@@ -3462,9 +3476,10 @@ function vNext(){
   VG.i++;
   if(VG.i >= VG.targets.length) return vEnd();
   const tg = VG.targets[VG.i], v = VG.v;
-  VG.samples = []; VG.voiced = 0; VG.trace = []; VG.lastT = 0; VG.hinted = false;
+  VG.samples = []; VG.voiced = 0; VG.trace = []; VG.lastT = 0; VG.hinted = false; VG.ema = null;
   drawVTargets();
-  const guide = v.guide === 'each' || v.guide === 'harm' || (v.guide === 'first' && VG.i === 0);
+  const hEl = $('#vHint'); if(hEl){ hEl.className = 'vhint'; hEl.innerHTML = '👂 目標の音が鳴ったら、続けて歌おう'; }
+  const guide = state.voice.easy || v.guide === 'each' || v.guide === 'harm' || (v.guide === 'first' && VG.i === 0);
   const me = VG;
   if(guide){
     VG.phase = 'guide';
@@ -3487,16 +3502,35 @@ function vFrame(midi, why){
   const read = $('#vNow');
   if(VG.phase !== 'sing'){ if(read) read.textContent = why === 'busy' ? '🔈 再生中…' : ''; return; }
   const tg = VG.targets[VG.i], target = VG.tonic + tg.semi;
-  if(now - VG.singAt > VTIMEOUT){ vScore(true); return; }
-  if(midi === null){ VG.trace.push({t:now, c:null}); if(read) read.textContent = '🎤 声を出してください'; return; }
+  if(now - VG.singAt > (state.voice.easy ? 14000 : VTIMEOUT)){ vScore(true); return; }
+  if(midi === null){ VG.trace.push({t:now, c:null}); if(read) read.textContent = '🎤 声を出してください'; vHint(null); return; }
   let diff = midi - target; diff -= 12 * Math.round(diff / 12);
   const c = diff * 100;
   VG.trace.push({t:now, c});
   if(VG.trace.length > 160) VG.trace.splice(0, VG.trace.length - 160);
   const sung = Math.round(midi - VG.tonic);
   if(read) read.innerHTML = `いま:<b style="color:${DEG_COLOR[mod(sung, 12)]}">${SOLFA[mod(sung, 12)]}</b> ${c > 0 ? '+' : ''}${Math.round(c)}¢`;
+  vHint(c, sung, tg);
   if(Math.abs(c) <= 150){ VG.samples.push(c); VG.voiced += dt; }
   if(VG.voiced >= VG.hold * 1000) vScore(false);
+}
+// 歌っている声が目標より高いか低いかを、ことばと矢印で大きく表示(ちらつかないよう平滑化)
+function vHint(c, sung, tg){
+  const el = $('#vHint'); if(!el) return;
+  if(c === null){ VG.ema = null; el.className = 'vhint'; el.innerHTML = '🎤 声を出してください'; return; }
+  VG.ema = VG.ema == null ? c : VG.ema * .6 + c * .4;
+  const e = VG.ema, a = Math.abs(e);
+  let cls, html;
+  if(a <= 10){ cls = 'just'; html = '◎ ぴったり! そのままキープ'; }
+  else if(a <= 25){ cls = 'near'; html = `○ ほぼOK <small>(${e > 0 ? 'ほんの少し高め' : 'ほんの少し低め'})</small>`; }
+  else if(a <= 60){ cls = e > 0 ? 'high' : 'low'; html = e > 0 ? '▼ 少し<b>高い</b> → ほんの少し下げて' : '▲ 少し<b>低い</b> → ほんの少し上げて'; }
+  else if(a <= 150){ cls = e > 0 ? 'high' : 'low'; html = e > 0 ? '▼▼ <b>高すぎ</b> → 下げて' : '▲▲ <b>低すぎ</b> → 上げて'; }
+  else{
+    cls = e > 0 ? 'high' : 'low';
+    html = `いま「${SOLFA[mod(sung, 12)]}」の音です。目標の「${vLabel(tg.semi)}」は${e > 0 ? '<b>もっと下</b> ▼' : '<b>もっと上</b> ▲'}<br><small>🔊「目標の音」で確認できます</small>`;
+  }
+  el.className = 'vhint ' + cls;
+  el.innerHTML = html;
 }
 const median = a => { const s = a.slice().sort((x, y) => x - y); return s.length ? s[Math.floor(s.length / 2)] : 0; };
 function vScore(timeout){
@@ -3598,10 +3632,11 @@ function buildVPlay(){
   $('#v-vplay').innerHTML = `
     <div class="rp-head">
       <button class="icon-btn" onclick="vQuit()">✕</button>
-      <div class="grow" style="min-width:0"><div class="rp-title">${l.track.icon} ${esc(l.t)}</div><div class="rp-phase">キー ${keyName(VG.kpc, VG.minor)} ・ ${VG.targets.length}音</div></div>
+      <div class="grow" style="min-width:0"><div class="rp-title">${l.track.icon} ${esc(l.t)}</div><div class="rp-phase">${voiceKeyLabel(VG.kpc)} ・ ${VG.targets.length}音${state.voice.easy ? ' ・ お手本あり' : ''}</div></div>
     </div>
     <div class="mic-targets" id="vT" style="margin-top:10px"></div>
     <div class="vmsg" id="vMsg">🎤 マイクを準備中…</div>
+    <div class="vhint" id="vHint"></div>
     <div class="vcv-wrap"><canvas id="vCanvas"></canvas><div class="vnow" id="vNow"></div></div>
     <div class="row wrap" style="justify-content:center;margin:10px 0">
       <button class="btn sm" onclick="if(VG&&VG.phase==='sing'){stopAll();keyRef(VG.tonic,VG.minor);}">🎼 キー</button>
@@ -3636,6 +3671,10 @@ function vDraw(){
     g.strokeStyle = '#3FBF6A'; g.lineWidth = 2; g.beginPath(); g.moveTo(0, H / 2); g.lineTo(W, H / 2); g.stroke();
     g.fillStyle = muted; g.font = '10px sans-serif'; g.textAlign = 'left';
     [[100,'+100¢(半音上)'],[-100,'-100¢(半音下)']].forEach(([c, t]) => { g.globalAlpha = .5; g.fillRect(0, yOf(c), W, 1); g.globalAlpha = 1; g.fillText(t, 4, yOf(c) - 3); });
+    g.font = '800 13px "Hiragino Sans",sans-serif'; g.textAlign = 'right';
+    g.fillStyle = '#E5564B'; g.fillText('▲ 高い(下げる)', W - 8, 18);
+    g.fillStyle = '#4C9BEA'; g.fillText('▼ 低い(上げる)', W - 8, H - 12);
+    g.textAlign = 'left'; g.font = '10px sans-serif';
     const tg = VG.targets[VG.i];
     if(tg){
       g.font = '800 13px "Hiragino Sans",sans-serif'; g.fillStyle = DEG_COLOR[mod(tg.semi, 12)];
