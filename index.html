@@ -212,6 +212,8 @@ body.in-game .tabbar{display:none}
 .staff-wrap svg{background:var(--card2);border-radius:12px}
 
 /* マイク */
+.dl{font-weight:800;font-size:12px;color:var(--muted)}.dl.up{color:var(--good)}.dl.down{color:var(--bad)}
+.ga-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:0 0 10px;padding:8px 10px;border-radius:12px;background:var(--card2)}
 .mic-err{background:var(--accent-soft);border-radius:12px;padding:10px 12px;text-align:left;line-height:1.6}
 .mic-err ol li{margin:4px 0}
 .mic-box{background:var(--card2);border-radius:14px;padding:14px;margin:10px 0}
@@ -976,7 +978,7 @@ function load(){
   state.read = state.read || {};
   state.rhythm = Object.assign({calibMs:0, calibrated:false, diff:'normal', du:false, speed:1, recent:[]}, state.rhythm || {});
   state.arcade = Object.assign({hero:{}, heroClear:{}, echo:null, surv:null, rush:null, rushLv:0, slow:false}, state.arcade || {});
-  state.voice = Object.assign({high:false, recent:[], key:'C', easy:true, home:null}, state.voice || {});
+  state.voice = Object.assign({high:false, recent:[], key:'C', easy:true, home:null, guideVoice:true, along:false, rangeLog:[]}, state.voice || {});
   state.created = state.created || todayStr();
 }
 function save(){ try{ localStorage.setItem(SAVE_KEY, JSON.stringify(state)); }catch(e){} }
@@ -1523,6 +1525,10 @@ const ACH = [
   {id:'v_first',i:'🎙️', n:'初めての発声',   d:'発声・音程レッスンを完了',   f:() => (state.totals.vNotes || 0) >= 1},
   {id:'v_ace',  i:'🎯', n:'絶対音程',        d:'発声レッスンで平均90点以上', f:() => (state.totals.vAce || 0) >= 1},
   {id:'v_100',  i:'🌟', n:'ぴったり×100',    d:'発声でPERFECTを通算100回',  f:() => (state.totals.vPerfect || 0) >= 100},
+  {id:'warm7',  i:'🌅', n:'発声の習慣',     d:'ウォームアップを7回',          f:() => (state.totals.warmups || 0) >= 7},
+  {id:'warm30', i:'☀️', n:'発声マスター',   d:'ウォームアップを30回',         f:() => (state.totals.warmups || 0) >= 30},
+  {id:'range12',i:'🎼', n:'1オクターブの声', d:'声域が12半音以上',             f:() => (state.voice.rangeLog || []).some(r => r.hi - r.lo >= 12)},
+  {id:'range24',i:'🌈', n:'2オクターブの声', d:'声域が24半音以上',             f:() => (state.voice.rangeLog || []).some(r => r.hi - r.lo >= 24)},
   {id:'rush5k', i:'🚀', n:'ラッシュ5000',    d:'音階ラッシュで5,000点',       f:() => ((state.arcade.rush || {}).best || 0) >= 5000},
   {id:'rush20k',i:'🏎️', n:'ラッシュ20000',   d:'音階ラッシュで20,000点',      f:() => ((state.arcade.rush || {}).best || 0) >= 20000},
   {id:'rushLv7',i:'🧠', n:'12音の覇者',      d:'音階ラッシュでLv7(12音)に到達', f:() => (state.arcade.rushLv || 0) >= 7},
@@ -1627,6 +1633,7 @@ const GEN = {
         }else playSeq(notes, 0.15, gap);
       },
       keys: semis.map(s => pref + s),
+      tonic, guitarAns:true,
     };
   },
 
@@ -1673,6 +1680,7 @@ const GEN = {
       explain: offs.map(o => degPlain(o)).join(' '),
       after(){ stopAll(); playSeq(notes, 0.15, gap); },
       keys:['mel:' + (minor ? 'm' : '') + p.len],
+      tonic, guitarAns:true,
     };
   },
 
@@ -2172,6 +2180,7 @@ function renderAnswer(q){
     }
   }
   if(q.kind === 'mic') renderMic(q, area);
+  if(q.guitarAns) gaSetup(q, area);
 }
 function optOf(q, v){ return q.options.find(o => o.value === v) || {html:v}; }
 function drawSlots(results){
@@ -2236,6 +2245,49 @@ function fretTap(s, f, m){
   const q = r.q;
   finish(ok, '', true);
   if(q.after) setTimeout(() => { if(round && round.q === q) q.after(ok); }, 650);
+}
+
+/* ---------- ギターで答える(度数聴音・旋律聴音) ---------- */
+// 弾いた音をマイクで聴き取り、キーのドからの度数に直して、ボタンを押したのと同じ扱いにする
+const GA = {cand:null, cnt:0, armed:true, lastPc:null, silence:0};
+function gaSetup(q, area){
+  const on = !!state.settings.guitarAns;
+  const bar = document.createElement('div');
+  bar.className = 'ga-bar';
+  bar.innerHTML = `<button class="btn sm ${on ? 'primary' : ''}" id="gaToggle">🎸 ギターで答える${on ? ':ON' : ''}</button><span id="gaNow" class="small muted">${on ? '🎸 準備中…' : 'ONにすると、弾いた音で回答できます'}</span>`;
+  area.prepend(bar);
+  $('#gaToggle').onclick = () => {
+    state.settings.guitarAns = !state.settings.guitarAns; save();
+    if(!state.settings.guitarAns) micPause();
+    const nb = $('#gaToggle').parentElement; nb.remove(); gaSetup(q, $('#gAnswer'));
+  };
+  if(!on) return;
+  Object.assign(GA, {cand:null, cnt:0, armed:true, lastPc:null, silence:0});
+  micStart(gaFrame).then(() => { const el = $('#gaNow'); if(el) el.textContent = '🎸 弾いてください(単音で)'; })
+    .catch(err => { const el = $('#gaNow'); if(el) el.innerHTML = micErrorHTML(err); });
+}
+function gaFrame(midi, why){
+  const r = round; if(!r || r.answered || !r.q || !r.q.guitarAns) return;
+  const el = $('#gaNow');
+  if(midi === null){
+    GA.silence += 45; GA.cand = null; GA.cnt = 0;
+    if(GA.silence > 140) GA.armed = true;       // 音が切れたら、同じ音をもう一度弾いても受け付ける
+    if(el && GA.silence > 400) el.textContent = why === 'busy' ? '🔈 再生中…' : '🎸 弾いてください(単音で)';
+    return;
+  }
+  GA.silence = 0;
+  const near = Math.round(midi);
+  if(Math.abs(midi - near) > .4){ GA.cnt = 0; return; }
+  const pc = mod(near - r.q.tonic, 12);
+  if(GA.cand === pc) GA.cnt++; else { GA.cand = pc; GA.cnt = 1; }
+  if(el) el.innerHTML = `いま:<b style="color:${DEG_COLOR[pc]}">${SOLFA[pc]}</b>(${midiName(near)})`;
+  if(GA.cnt >= 5 && (GA.armed || GA.lastPc !== pc)){
+    GA.armed = false; GA.lastPc = pc; GA.cnt = 0;
+    const v = String(pc);
+    if(!r.q.options.some(o => o.value === v)){ if(el) el.innerHTML = `<b>${SOLFA[pc]}</b> は選択肢にありません`; return; }
+    if(r.q.kind === 'choice') answerChoice(v, $(`#gAnswer .answers .btn[data-value="${v}"]`));
+    else seqInput(v);
+  }
 }
 
 /* ---------- マイク回答 ---------- */
@@ -2434,6 +2486,7 @@ function checkAch(){
     try{ if(a.f()){ state.ach[a.id] = todayStr(); got.push(a); } }catch(e){}
   });
   got.forEach((a, i) => setTimeout(() => toast(`🏅 実績解除:${a.i} ${a.n}`), 400 + i * 700));
+  if(got.length){ state.log = state.log || []; got.forEach(a => state.log.push({d:todayStr(), s:`🏅 実績「${a.n}」`})); }
   if(got.length) save();
   return got;
 }
@@ -2480,6 +2533,7 @@ function endRound(){
   if(stars === 3 || (r.mode !== 'ta' && r.score === r.total)) confetti();
 }
 function renderResult(r, stars, notices, achs){
+  logEvents(notices.map(n => (r.title ? r.title.replace(/<[^>]+>/g, '') + ' ' : '') + n)); save();
   const lv = levelInfo(state.xp);
   const acc = r.mode === 'ta' ? null : Math.round(r.score / r.total * 100);
   const msg = r.mode === 'ta' ? (r.score >= 30 ? '驚異的!' : r.score >= 15 ? 'すばらしいスピード!' : 'ナイスチャレンジ!')
@@ -2767,6 +2821,8 @@ function rgEnd(){
   if(r.recent.length > 400) r.recent = r.recent.slice(-400);
   state.totals.rP = (state.totals.rP || 0) + RG.counts.P;
   state.totals.rNotes = (state.totals.rNotes || 0) + total;
+  { const dd = today(), ok = res.notes.filter(n => n.dtMs !== null && !n.wrong);
+    dd.rN = (dd.rN || 0) + ok.length; dd.rAbs = (dd.rAbs || 0) + ok.reduce((a, n) => a + Math.abs(n.dtMs), 0); dd.rSum = (dd.rSum || 0) + ok.reduce((a, n) => a + n.dtMs, 0); }
   touchStreak();
   RG.cfg.onEnd(res);
 }
@@ -3204,6 +3260,7 @@ function planCheck(notices){
 
 /* ---------- 結果画面 ---------- */
 function renderRResult(res, o){
+  logEvents(o.notices.map(n => o.title + ' ' + n)); save();
   document.body.classList.add('in-game');
   const achs = checkAch();
   const el = $('#v-result');
@@ -3483,23 +3540,125 @@ const KID_TASK = {
   low:  {icon:'⬇',  say:'いつもより <b>ひくい こえ</b>で「おー」!', ok:'ひくい こえ、できた!'},
   up:   {icon:'↗',  say:'すべりだいを のぼるように <b>ひくい → たかい</b>「うー↗」', ok:'のぼれたね!'},
   down: {icon:'↘',  say:'すべりだいを すべるように <b>たかい → ひくい</b>「うー↘」', ok:'すべれたね!'},
+  lowest: {icon:'⤓', say:'ゆっくり声を下げて、<b>いちばん低い声</b>で1秒のばしてください(無理はしない)', ok:'記録しました'},
+  highest:{icon:'⤒', say:'ゆっくり声を上げて、<b>いちばん高い声</b>で1秒のばしてください(裏声もOK・無理はしない)', ok:'記録しました'},
 };
 
+
+/* ---------- 人の声のお手本(「あー」をフォルマント合成) ---------- */
+// のこぎり波(声帯)→ 母音「あ」の共鳴(フォルマント)3つ → ゆるいビブラート。dest を省略すると master
+function voiceTone(midi, t, dur, vol = .55, dest, sustain){
+  const c = ac(); if(!c) return null;
+  const f = midiHz(midi);
+  const o = c.createOscillator(); o.type = 'sawtooth'; o.frequency.setValueAtTime(f, t);
+  const lfo = c.createOscillator(), lg = c.createGain();
+  lfo.frequency.value = 5.3;
+  lg.gain.setValueAtTime(0, t); lg.gain.linearRampToValueAtTime(f * .007, t + .7);
+  lfo.connect(lg); lg.connect(o.frequency);
+  const female = f > 210;
+  const F = female ? [[850, 1, 90], [1220, .55, 100], [2810, .3, 140]] : [[730, 1, 80], [1090, .5, 90], [2440, .28, 130]];
+  const sum = c.createGain(); sum.gain.value = 1;
+  F.forEach(([fr, a, bw]) => {
+    const bp = c.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = fr; bp.Q.value = fr / bw;
+    const g = c.createGain(); g.gain.value = a;
+    o.connect(bp); bp.connect(g); g.connect(sum);
+  });
+  // 基音も少し足して音程感をはっきりさせる
+  const fund = c.createOscillator(), fg = c.createGain(); fund.type = 'sine'; fund.frequency.value = f; fg.gain.value = .35;
+  lg.connect(fund.frequency); fund.connect(fg); fg.connect(sum);
+  const env = c.createGain();
+  const peak = vol * 1.6;
+  env.gain.setValueAtTime(0.0001, t);
+  env.gain.exponentialRampToValueAtTime(peak, t + .09);
+  if(!sustain){ env.gain.setValueAtTime(peak, t + dur); env.gain.exponentialRampToValueAtTime(0.0001, t + dur + .28); }
+  sum.connect(env); env.connect(dest || AE.master);
+  const end = sustain ? t + 600 : t + dur + .32;
+  [o, lfo, fund].forEach(n => { n.start(t); n.stop(end); });
+  if(!dest && !sustain) track(o, t + dur);
+  return {stop(){ try{ const n = c.currentTime; env.gain.cancelScheduledValues(n); env.gain.setValueAtTime(env.gain.value, n); env.gain.exponentialRampToValueAtTime(0.0001, n + .2); [o, lfo, fund].forEach(x => x.stop(n + .25)); }catch(e){} }};
+}
+// 声のレッスンのお手本(設定で「人の声」か「楽器」)
+function vGuide(midi, dur = 1.1){
+  stopAll();
+  if(state.voice.guideVoice) voiceTone(midi, ac().currentTime + .02, dur, .55);
+  else note(midi, 0, .65, dur);
+}
+// いっしょに歌うモード:採点中もお手本を小さく鳴らし続ける(イヤホン前提。マイクの判定は止めない)
+function vAlongStart(midi){
+  vAlongStop();
+  if(!state.voice.along) return;
+  VG.along = voiceTone(midi, ac().currentTime + .05, 0, .28, null, true);
+}
+function vAlongStop(){ if(VG && VG.along){ VG.along.stop(); VG.along = null; } }
+
+/* ---------- 毎日のウォームアップと声域チェック(コースとは別枠のレッスン) ---------- */
+const DOREMI_UPDOWN = [0,2,4,5,7,5,4,2,0];
+const VEXTRA = {
+  warmup:{id:'warmup', t:'毎日の発声ウォームアップ', d:'約3分。サイレンで声をほぐし → ロングトーン → ドレミ → ドミソ。毎日の音程のずれが記録され、成長グラフになります。',
+    voice:{style:'warm', tol:35, items:() => [
+      {task:'up'}, {task:'down'},
+      {semi:0, hold:2}, {semi:7, hold:1.6},
+      ...DOREMI_UPDOWN.map(s => ({semi:s, hold:.8})),
+      ...[0,4,7,4,0].map(s => ({semi:s, hold:.8})),
+    ]}},
+  vrange:{id:'vrange', t:'声域チェック', d:'出せるいちばん低い声と高い声を測ります(無理はしないで)。記録は週ごとに残り、声の範囲が広がる様子が見えます。',
+    voice:{style:'warm', items:() => [{task:'lowest'}, {task:'highest'}, {task:'lowest'}, {task:'highest'}]}},
+};
+VEXTRA.warmup.track = {icon:'🌅', name:'毎日のウォームアップ', lessons:[VEXTRA.warmup], art:'voice'};
+VEXTRA.vrange.track = {icon:'📏', name:'声域チェック', lessons:[VEXTRA.vrange], art:'voice'};
+VEXTRA.warmup.idx = 0; VEXTRA.vrange.idx = 0;
+const vLesson = id => LESSONS[id] || VEXTRA[id];
+
+// 日ごとの「音程の平均ずれ(¢)」の折れ線グラフ(直近30日)
+function voiceGrowthSVG(){
+  const pts = [];
+  for(let i = -29; i <= 0; i++){
+    const d = state.days[dayOffset(i)];
+    if(d && d.vN) pts.push({i, v:d.vAbs / d.vN});
+  }
+  if(pts.length < 1) return '<p class="small muted">発声レッスンをすると、ここに毎日の「音程の平均ずれ」が記録されます。</p>';
+  const W = 320, H = 130, mx = Math.max(60, ...pts.map(p => p.v));
+  const x = i => 24 + (i + 29) / 29 * (W - 34), y = v => 10 + (1 - v / mx) * (H - 30);
+  let h = `<svg viewBox="0 0 ${W} ${H}" width="100%" style="max-width:520px;display:block">`;
+  [10, 25, 50].filter(v => v < mx).forEach(v => { h += `<line x1="24" x2="${W - 10}" y1="${y(v)}" y2="${y(v)}" stroke="var(--border)" stroke-dasharray="3 3"/><text x="2" y="${y(v) + 4}" font-size="9" fill="var(--muted)">${v}¢</text>`; });
+  h += `<rect x="24" y="${y(25)}" width="${W - 34}" height="${y(0) - y(25)}" fill="rgba(63,191,106,.12)"/>`;
+  h += `<polyline fill="none" stroke="var(--brand)" stroke-width="2.5" points="${pts.map(p => `${x(p.i)},${y(p.v)}`).join(' ')}"/>`;
+  pts.forEach(p => { h += `<circle cx="${x(p.i)}" cy="${y(p.v)}" r="3.5" fill="var(--brand)"/>`; });
+  h += `<text x="24" y="${H - 4}" font-size="9" fill="var(--muted)">30日前</text><text x="${W - 10}" y="${H - 4}" font-size="9" fill="var(--muted)" text-anchor="end">今日</text></svg>`;
+  const first = pts[0].v, last = pts[pts.length - 1].v;
+  return h + `<p class="small" style="margin-top:4px">最新 <b>${Math.round(last)}¢</b>${pts.length > 1 ? `(最初 ${Math.round(first)}¢ → ${last < first ? '<b style="color:var(--good)">' + Math.round(first - last) + '¢ 改善!</b>' : 'これから伸びます'})` : ''} ・ 緑の帯(±25¢以内)が目標</p>`;
+}
+// 声域の記録(鍵盤のような横棒)
+function voiceRangeHTML(){
+  const log = state.voice.rangeLog || [];
+  if(!log.length) return '<p class="small muted">まだ測っていません。</p>';
+  const lo = Math.min(...log.map(r => r.lo)) - 2, hi = Math.max(...log.map(r => r.hi)) + 2;
+  const pct = m => (m - lo) / (hi - lo) * 100;
+  return log.slice(-6).map(r => `<div class="vrow"><span class="small" style="width:76px">${r.d.slice(5).replace('-', '/')}</span>
+    <div class="vbar" style="height:18px"><span style="position:absolute;top:3px;bottom:3px;left:${pct(r.lo)}%;width:${pct(r.hi) - pct(r.lo)}%;background:linear-gradient(90deg,#4C9BEA,#E5564B);border-radius:6px"></span></div>
+    <span class="small" style="width:118px;text-align:right">${midiName(r.lo)}〜${midiName(r.hi)}</span></div>`).join('')
+    + `<p class="small muted" style="margin-top:4px">最新の声域:<b>${Math.round(log[log.length - 1].hi - log[log.length - 1].lo)}半音</b>(1オクターブ=12半音)</p>`;
+}
+
 function openVLesson(id){
-  const l = LESSONS[id], v = l.voice, ls = state.lessons[id] || {};
-  const match = v.mode !== 'task';
+  const l = vLesson(id), v = l.voice, ls = state.lessons[id] || {};
+  const match = v.mode !== 'task' && id !== 'vrange';
   const home = state.voice.home;
   openSheet(`
     <div class="sheet-head"><h3>${l.track.icon} ${l.t}</h3><button class="icon-btn" onclick="closeSheet()">✕</button></div>
-    <div class="small muted">${l.track.name} ・ レッスン ${l.idx + 1} / ${l.track.lessons.length}</div>
+    <div class="small muted">${VEXTRA[id] ? l.track.name : `${l.track.name} ・ レッスン ${l.idx + 1} / ${l.track.lessons.length}`}</div>
     <div class="res-stars" style="font-size:28px">${[1,2,3].map(i => `<span class="${i <= (ls.stars || 0) ? '' : 'off'}">★</span>`).join('')}</div>
     <p style="margin:6px 0 10px">${l.d}</p>
-    <div class="small muted">ベスト ${ls.best || 0} 点 ・ プレイ ${ls.plays || 0}回 ・ ${v.kid ? 'できた割合 60%で★1、80%で★2、ぜんぶで★3' : '平均65点で★1、80点で★2、90点で★3'}</div>
+    ${id === 'vrange' ? voiceRangeHTML() : `<div class="small muted">ベスト ${ls.best || 0} ${v.kid || v.style ? '%' : '点'} ・ プレイ ${ls.plays || 0}回 ・ ${v.kid || v.style ? 'できた割合 60%で★1、80%で★2、ぜんぶで★3' : '平均65点で★1、80点で★2、90点で★3'}</div>`}
     ${id !== 'kd2' ? `<div class="set-row" style="margin-top:8px"><div class="sl">あなたの声の高さ<small>${home ? `${midiName(home)} くらい(お手本をこの近くの高さで鳴らします)` : 'まだ測っていません。測ると、お手本があなたの声の高さで鳴ります'}</small></div><button class="btn sm ${home ? '' : 'primary'}" onclick="closeSheet();startVoice('kd2')">${home ? 'はかりなおす' : 'はかる'}</button></div>` : ''}
     ${match ? `
     <div class="set-row"><div class="sl">キー<small>慣れるまでは C(ド=C)固定がおすすめ</small></div>
       <div class="seg">${[...Object.keys(VKEYS), 'rand'].map(k => `<button class="${state.voice.key === k ? 'on' : ''}" onclick="state.voice.key='${k}';save();openVLesson('${id}')">${k === 'rand' ? 'ランダム' : k}</button>`).join('')}</div></div>
-    ${v.kid ? '' : `<div class="set-row"><div class="sl">お手本<small>やさしい=毎回、目標の音を先に鳴らす</small></div>
+    <div class="set-row"><div class="sl">お手本の音色<small>人の声(「あー」)のほうが、声を合わせやすい</small></div>
+      <div class="seg"><button class="${state.voice.guideVoice ? 'on' : ''}" onclick="state.voice.guideVoice=true;save();openVLesson('${id}')">🗣 人の声</button><button class="${state.voice.guideVoice ? '' : 'on'}" onclick="state.voice.guideVoice=false;save();openVLesson('${id}')">🎸 楽器</button></div></div>
+    <div class="set-row"><div class="sl">いっしょに歌う<small>歌っている間もお手本を小さく鳴らし続ける。<b>イヤホン必須</b>(スピーカーだとマイクがお手本を拾って正しく判定できません)</small></div>
+      <div class="seg"><button class="${state.voice.along ? 'on' : ''}" onclick="state.voice.along=true;save();openVLesson('${id}')">🎧 ON</button><button class="${state.voice.along ? '' : 'on'}" onclick="state.voice.along=false;save();openVLesson('${id}')">OFF</button></div></div>
+    ${v.kid || v.style ? '' : `<div class="set-row"><div class="sl">お手本<small>やさしい=毎回、目標の音を先に鳴らす</small></div>
       <div class="seg"><button class="${state.voice.easy ? 'on' : ''}" onclick="state.voice.easy=true;save();openVLesson('${id}')">毎回鳴らす(やさしい)</button><button class="${state.voice.easy ? '' : 'on'}" onclick="state.voice.easy=false;save();openVLesson('${id}')">レッスンどおり</button></div></div>`}
     ${home ? '' : `<div class="set-row"><div class="sl">お手本の高さ<small>自分の声に近い高さ(判定はオクターブ不問)</small></div>
       <div class="seg"><button class="${state.voice.high ? '' : 'on'}" onclick="state.voice.high=false;save();openVLesson('${id}')">低め(男声)</button><button class="${state.voice.high ? 'on' : ''}" onclick="state.voice.high=true;save();openVLesson('${id}')">高め(女声)</button></div></div>`}` : ''}
@@ -3511,12 +3670,14 @@ function openVLesson(id){
     </div>`);
 }
 async function startVoice(id){
-  const l = LESSONS[id], v = l.voice, mode = v.mode === 'task' ? 'task' : 'match';
+  const l = vLesson(id), v = l.voice;
   ac(); stopAll(); droneStop();
   const kpc = voiceKpc();
-  const targets = mode === 'task' ? v.tasks().map(task => ({task}))
+  const targets = v.items ? v.items() : v.mode === 'task' ? v.tasks().map(task => ({task}))
                                   : v.seq().map(s => v.harm ? {guide:s, semi:harmUp(s)} : {semi:s});
-  VG = {l, v, mode, kid:!!v.kid, tol:v.tol || 25, attempts:v.attempts || 1, kpc, tonic:voiceTonic(kpc), minor:!!v.minor,
+  const mode = targets.every(t => t.task) ? 'task' : 'match';
+  const style = v.style || (v.kid ? 'kid' : null);
+  VG = {l, v, mode, style, kid:style === 'kid', pass:!!style, tol:v.tol || 25, attempts:v.attempts || 1, kpc, tonic:voiceTonic(kpc), minor:!!v.minor,
         targets, i:-1, tries:0, phase:'init', res:[], trace:[], samples:[], all:[], voiced:0, anyV:0, okV:0,
         hold:v.hold || VHOLD, alive:true, ranges:[]};
   document.body.classList.add('in-game');
@@ -3549,10 +3710,12 @@ function vNext(retry){
   Object.assign(VG, {samples:[], all:[], voiced:0, anyV:0, okV:0, trace:[], lastT:0, hinted:false, ema:null, seg:null, lastVoice:0, replayed:false, pitches:[]});
   drawVTargets();
   const me = VG;
-  if(VG.mode === 'task'){
-    VG.phase = 'sing'; VG.singAt = performance.now();
-    $('#vMsg').innerHTML = `🐸「${KID_TASK[tg.task].say}」`;
-    setHint('', '🎤 こえを だしてね');
+  const mb = $('#vBtnM'), tb = $('#vBtnT');
+  if(mb) mb.style.display = tg.task ? 'none' : ''; if(tb) tb.style.display = tg.task ? '' : 'none';
+  if(tg.task){
+    VG.phase = 'sing'; VG.singAt = performance.now(); VG.best = null; VG.win = []; VG.firstVoice = 0;
+    $('#vMsg').innerHTML = VG.kid ? `🐸「${KID_TASK[tg.task].say}」` : `🎤 ${KID_TASK[tg.task].say}`;
+    setHint('', '🎤 声を出してください');
     return;
   }
   setHint('', VG.kid ? '👂 おてほんを よく きいてね' : '👂 目標の音が鳴ったら、続けて歌おう');
@@ -3562,7 +3725,7 @@ function vNext(retry){
     const gm = VG.tonic + (v.harm ? tg.guide : tg.semi);
     $('#vMsg').innerHTML = v.harm ? `🔊 <b>${vLabel(tg.guide)}</b> が鳴ります → 3度上の <b style="color:${DEG_COLOR[mod(tg.semi, 12)]}">${vLabel(tg.semi)}</b> を歌う`
                          : VG.kid ? `🐸「${retry ? 'もういちど! ' : ''}よく きいてね…」` : '🔊 お手本を聴いて…';
-    stopAll(); note(gm, 0, .65, 1.1);
+    vGuide(gm, 1.1);
     setTimeout(() => { if(VG === me && VG.alive && VG.phase === 'guide'){ VG.phase = 'sing'; VG.singAt = performance.now(); vSingMsg(); } }, 1400);
   }else{
     VG.phase = 'sing'; VG.singAt = performance.now(); vSingMsg();
@@ -3570,6 +3733,7 @@ function vNext(retry){
 }
 function vSingMsg(){
   const tg = VG.targets[VG.i], col = DEG_COLOR[mod(tg.semi, 12)];
+  vAlongStart(VG.tonic + tg.semi);
   $('#vMsg').innerHTML = VG.kid ? `🐸「おなじ たかさで <b style="font-size:24px;color:${col}">${vLabel(tg.semi)}</b> を『あー』」`
                                 : `🎤 <b style="font-size:22px;color:${col}">${vLabel(tg.semi)}</b> を歌って、まっすぐ伸ばそう`;
   setHint('', '🎤 声を出してください');
@@ -3579,7 +3743,7 @@ function setHint(cls, html){ const el = $('#vHint'); if(!el) return; el.classNam
 function vHint(c, sung, tg){
   VG.ema = VG.ema == null ? c : VG.ema * .55 + c * .45;
   const e = VG.ema, a = Math.abs(e), n = Math.round(a / 100), kid = VG.kid;
-  const okBand = kid ? VG.tol : 25;
+  const okBand = VG.pass ? VG.tol : 25;
   if(a <= (kid ? 20 : 10)) return setHint('just', kid ? '🎉 ぴったり! そのまま「あー」' : '◎ ぴったり! そのままキープ');
   if(a <= okBand) return setHint('near', kid ? '💮 いいね! そのまま' : `○ ほぼOK <small>(${e > 0 ? 'ほんの少し高め' : 'ほんの少し低め'})</small>`);
   if(a <= 70) return setHint(e > 0 ? 'high' : 'low', e > 0 ? (kid ? '⬇ ちょっとだけ ひくく' : '▼ 少し<b>高い</b> → ほんの少し下げて') : (kid ? '⬆ ちょっとだけ たかく' : '▲ 少し<b>低い</b> → ほんの少し上げて'));
@@ -3599,16 +3763,18 @@ function vFrame(midi, why){
   if(why !== 'busy') vLevel();
   const read = $('#vNow');
   if(VG.phase !== 'sing'){ if(read) read.textContent = why === 'busy' ? '🔈 お手本中…' : ''; return; }
-  const limit = VG.mode === 'task' ? 12000 : (state.voice.easy || VG.kid) ? 14000 : VTIMEOUT;
-  if(now - VG.singAt > limit){ VG.mode === 'task' ? vTask(false) : vScore(); return; }
+  const tg0 = VG.targets[VG.i];
+  const range = tg0.task === 'lowest' || tg0.task === 'highest';
+  const limit = tg0.task ? (range ? 10000 : 12000) : (state.voice.easy || VG.pass) ? 14000 : VTIMEOUT;
+  if(now - VG.singAt > limit){ tg0.task ? vTask(range ? VG.best != null : false) : vScore(); return; }
   if(midi === null){
     VG.trace.push({t:now, rel:null});
     if(now - (VG.lastVoice || 0) > 350){ VG.seg = null; if(read) read.textContent = ''; }
     return;
   }
   VG.lastVoice = now;
-  if(VG.mode === 'task') return vFrameTask(midi, dt, now, VG.targets[VG.i], read);
-  const tg = VG.targets[VG.i], target = VG.tonic + tg.semi;
+  if(tg0.task) return vFrameTask(midi, dt, now, tg0, read);
+  const tg = tg0, target = VG.tonic + tg.semi, hold = tg.hold || VG.hold;
   let diff = midi - target; diff -= 12 * Math.round(diff / 12);         // オクターブは問わない(−6〜+6半音)
   const c = diff * 100;
   VG.trace.push({t:now, rel:diff});
@@ -3618,12 +3784,12 @@ function vFrame(midi, why){
   vHint(c, sung, tg);
   VG.anyV += dt; VG.all.push(c);
   if(Math.abs(c) <= 150){ VG.samples.push(c); VG.voiced += dt; }
-  if(VG.voiced >= VG.hold * 1000) return vScore();
+  if(VG.voiced >= hold * 1000) return vScore();
   // 大きくずれたまま声を出し続けたら、その音で判定して先へ進む(待たせない)
-  if(VG.anyV >= VG.hold * 2500 && VG.voiced < VG.hold * 500) return vScore();
+  if(VG.anyV >= hold * 2500 && VG.voiced < hold * 500) return vScore();
   // こども教室:しばらく合わなければ、お手本をもう一度鳴らす(先生のように)
   if(VG.kid && !VG.replayed && VG.anyV > 2200 && VG.voiced < 300){
-    VG.replayed = true; stopAll(); note(target, 0, .65, 1.0);
+    VG.replayed = true; vGuide(target, 1.0);
     $('#vMsg').innerHTML = '🐸「もういちど よく きいて、おなじ たかさに あわせてね」';
   }
 }
@@ -3646,6 +3812,16 @@ function vFrameTask(midi, dt, now, tg, read){
     if(ok){ VG.okV += dt; setHint('just', task === 'high' ? '⬆ たかい! そのまま!' : '⬇ ひくい! そのまま!'); }
     else setHint(task === 'high' ? 'low far' : 'high far', task === 'high' ? '⬆⬆ もっと たかく!' : '⬇⬇ もっと ひくく!');
     if(VG.okV >= 700) vTask(true);
+  }else if(task === 'lowest' || task === 'highest'){
+    // 0.5秒ほど安定して出せた高さだけを記録(一瞬の裏返り・雑音は無視)
+    if(!VG.firstVoice) VG.firstVoice = now;
+    VG.win.push(midi); if(VG.win.length > 11) VG.win.shift();
+    if(VG.win.length >= 11 && Math.max(...VG.win) - Math.min(...VG.win) < .8){
+      const m = median(VG.win);
+      if(VG.best == null || (task === 'lowest' ? m < VG.best : m > VG.best)) VG.best = m;
+    }
+    setHint('near', `いま <b>${midiName(midi)}</b>${VG.best != null ? ` ・ 記録 <b>${midiName(VG.best)}</b>` : ''}<br><small>${task === 'lowest' ? 'もう少し下げられたら下げて' : 'もう少し上げられたら上げて'}。決まったら「つぎへ」</small>`);
+    if(now - VG.firstVoice > 7000 && VG.best != null) vTask(true);
   }else{
     if(!VG.seg) VG.seg = {min:midi, max:midi};
     VG.seg.min = Math.min(VG.seg.min, midi); VG.seg.max = Math.max(VG.seg.max, midi);
@@ -3658,11 +3834,14 @@ const median = a => { const s = a.slice().sort((x, y) => x - y); return s.length
 function vTask(ok){
   if(VG.phase !== 'sing') return;
   VG.phase = 'fb';
+  vAlongStop();
   const tg = VG.targets[VG.i];
+  if((tg.task === 'lowest' || tg.task === 'highest') && VG.best == null) ok = false;
   const r = {task:tg.task, score:ok ? 100 : 0, pass:ok, label:ok ? KID_TASK[tg.task].ok : 'じかんぎれ'};
+  if((tg.task === 'lowest' || tg.task === 'highest') && ok){ r.midi = VG.best; r.label = `${tg.task === 'lowest' ? 'いちばん低い声' : 'いちばん高い声'}:${midiName(VG.best)}`; }
   if(tg.task === 'range' && ok){ r.midi = median(VG.pitches.slice(Math.floor(VG.pitches.length * .3))); VG.ranges.push(r.midi); r.label = `${midiName(r.midi)} くらいの こえ`; }
   VG.res.push(r);
-  $('#vMsg').innerHTML = ok ? `🐸「${r.label} 💮」` : '🐸「だいじょうぶ、つぎ いってみよう」';
+  $('#vMsg').innerHTML = VG.kid ? (ok ? `🐸「${r.label} 💮」` : '🐸「だいじょうぶ、つぎ いってみよう」') : (ok ? `✅ ${r.label}` : '⏭ 次へ進みます');
   setHint(ok ? 'just' : '', ok ? '💮 できた!' : '…');
   sfx(ok ? 'ok' : 'ng');
   drawVTargets();
@@ -3672,6 +3851,7 @@ function vTask(ok){
 function vScore(){
   if(VG.phase !== 'sing') return;
   VG.phase = 'fb';
+  vAlongStop();
   const tg = VG.targets[VG.i];
   const src = VG.samples.length >= 5 ? VG.samples : VG.all;               // 目標付近の声がなければ、出ていた声で判定
   const s = src.slice(Math.floor(src.length * 0.25));                      // 出だし(アタック)は除外
@@ -3684,12 +3864,13 @@ function vScore(){
     const score = clamp(Math.round(100 - 1.2 * Math.max(0, Math.abs(med) - 5) - 0.6 * Math.max(0, sd - 8)), 0, 100);   // ±10¢≒94点 / ±25¢≒76点 / ±50¢≒46点
     r = {semi:tg.semi, med, sd, score, label: score >= 90 ? 'PERFECT' : score >= 75 ? 'GREAT' : score >= 55 ? 'GOOD' : 'ずれ'};
   }
-  if(VG.kid){
+  if(VG.pass){
     r.pass = r.med !== null && Math.abs(r.med) <= VG.tol;
     if(r.med !== null){
       const big = Math.abs(r.med) > 150, n = Math.round(Math.abs(r.med) / 100);
-      r.label = r.pass ? (Math.abs(r.med) <= 20 ? 'ぴったり!🎉' : 'じょうず!💮')
-              : big ? `だいぶ ${r.med > 0 ? 'たかかった' : 'ひくかった'}ね(はんおん ${n}つ)` : `すこし ${r.med > 0 ? 'たかかった' : 'ひくかった'}ね`;
+      r.label = VG.kid ? (r.pass ? (Math.abs(r.med) <= 20 ? 'ぴったり!🎉' : 'じょうず!💮')
+              : big ? `だいぶ ${r.med > 0 ? 'たかかった' : 'ひくかった'}ね(はんおん ${n}つ)` : `すこし ${r.med > 0 ? 'たかかった' : 'ひくかった'}ね`)
+              : (r.pass ? (Math.abs(r.med) <= 15 ? 'ぴったり!' : 'OK!') : `${r.med > 0 ? '高い' : '低い'}${big ? `(半音${n}つ)` : ''}`);
     }
     // 合わなかったら、もう1回チャンス(お手本を聴き直してから)
     if(!r.pass && VG.tries < VG.attempts - 1){
@@ -3703,7 +3884,7 @@ function vScore(){
   }
   r.hinted = VG.hinted;
   VG.res.push(r);
-  const good = VG.kid ? r.pass : r.score >= 75;
+  const good = VG.pass ? r.pass : r.score >= 75;
   const col = r.med === null ? 'var(--muted)' : good ? '#3FBF6A' : r.score >= 55 ? '#E0A21B' : '#E5564B';
   const n = r.med === null ? 0 : Math.abs(r.med) / 100;
   const dir = r.med === null ? '' : Math.abs(r.med) <= 10 ? 'ぴったり!' : `${r.med > 0 ? '高い' : '低い'}${n >= 1 ? `(半音${Math.round(n)}つぶん)` : ''}`;
@@ -3711,13 +3892,14 @@ function vScore(){
   if(good) sfx('ok'); else if(r.score < 55) sfx('ng');
   drawVTargets();
   const me = VG;
-  if(!good){ setTimeout(() => { if(VG === me && VG.alive){ stopAll(); note(VG.tonic + tg.semi, 0, .6, 1.0); setHint('', '🔊 正しい音はこれ'); } }, 350); }
+  if(!good){ setTimeout(() => { if(VG === me && VG.alive){ vGuide(VG.tonic + tg.semi, 1.0); setHint('', '🔊 正しい音はこれ'); } }, 350); }
   setTimeout(() => { if(VG === me && VG.alive) vNext(); }, good ? 900 : 2000);
 }
 function vEnd(){
   const l = VG.l, res = VG.res;
+  vAlongStop();
   VG.alive = false; cancelAnimationFrame(VG.raf); micStop(); stopAll();
-  const kid = VG.kid || VG.mode === 'task';
+  const kid = VG.pass;
   const passN = res.filter(r => r.pass).length;
   const avg = kid ? Math.round(passN / res.length * 100) : Math.round(res.reduce((a, r) => a + r.score, 0) / res.length);
   const stars = kid ? (avg >= 100 ? 3 : avg >= 80 ? 2 : avg >= 60 ? 1 : 0) : (avg >= 90 ? 3 : avg >= 80 ? 2 : avg >= 65 ? 1 : 0);
@@ -3732,6 +3914,21 @@ function vEnd(){
   if(!kid && avg >= 90) state.totals.vAce = (state.totals.vAce || 0) + 1;
   state.totals.rounds++;
   const notices = [];
+  // 日ごとの音程の平均ずれ(成長グラフ用)
+  if(meds.length){ const dd = today(); dd.vN = (dd.vN || 0) + meds.length; dd.vAbs = (dd.vAbs || 0) + meds.reduce((a, r) => a + Math.abs(r.med), 0); }
+  if(l.id === 'warmup'){ today().done.warm = true; state.totals.warmups = (state.totals.warmups || 0) + 1; }
+  const lows = res.filter(r => r.task === 'lowest' && r.midi != null).map(r => r.midi), highs = res.filter(r => r.task === 'highest' && r.midi != null).map(r => r.midi);
+  if(lows.length && highs.length){
+    const lo = Math.min(...lows), hi = Math.max(...highs);
+    const log = state.voice.rangeLog || (state.voice.rangeLog = []);
+    const prev = log[log.length - 1];
+    if(prev && prev.d === todayStr()) log.pop();
+    log.push({d:todayStr(), lo:Math.round(lo * 10) / 10, hi:Math.round(hi * 10) / 10});
+    if(log.length > 60) log.shift();
+    const width = Math.round(hi - lo);
+    notices.push(`📏 声域:${midiName(lo)} 〜 ${midiName(hi)}(${width}半音${width >= 12 ? ` = ${Math.floor(width / 12)}オクターブ${width % 12 ? `と${width % 12}半音` : ''}` : ''})`);
+    if(prev && prev.d !== todayStr()){ const pw = Math.round(prev.hi - prev.lo); if(width > pw) notices.push(`🎉 前回より ${width - pw} 半音 広がりました!`); }
+  }
   if(VG.ranges.length){
     state.voice.home = Math.round(median(VG.ranges) * 10) / 10;
     notices.push(`🏠 あなたの声の高さを「${midiName(state.voice.home)}」くらいに設定しました。これからのお手本は、この近くの高さで鳴ります`);
@@ -3739,13 +3936,14 @@ function vEnd(){
   if(newRec && ls.plays > 1) notices.push('✨ 自己ベスト更新!');
   if(ls.stars > oldStars){
     notices.push(`★${ls.stars} 獲得!`);
-    if(!oldStars){ const nx = l.track.lessons[l.idx + 1]; notices.push(nx ? `🔓 次のレッスン解放:${nx.t}` : `🏆 ${l.track.name} 全レッスン突破!`); }
+    if(!oldStars && !VEXTRA[l.id]){ const nx = l.track.lessons[l.idx + 1]; notices.push(nx ? `🔓 次のレッスン解放:${nx.t}` : `🏆 ${l.track.name} 全レッスン突破!`); }
   }
   const xp = Math.round(avg / 100 * 30) + 10 + (ls.stars > oldStars ? 15 : 0);
   addXP(xp);
   touchStreak();
   const d = today(); d.done.lesson = true;
   planCheck(notices);
+  logEvents(notices.map(n => `${l.track.icon} ${l.t} ${n}`));
   save();
   checkAch();
   const tend = meds.length ? meds.reduce((a, r) => a + r.med, 0) / meds.length : null;
@@ -3764,13 +3962,15 @@ function vEnd(){
       <p class="center small muted">${l.track.icon} ${esc(l.t)}${VG.mode === 'match' ? `(${voiceKeyLabel(VG.kpc)})` : ''}</p>
       <div class="res-stars">${[1,2,3].map(i => `<span style="animation-delay:${i * .18}s" class="${i <= stars ? '' : 'off'}">★</span>`).join('')}</div>
       <div class="res-score">${avg}<span style="font-size:18px">${kid ? ' %' : ' 点'}</span></div>
-      <div class="res-msg">${kid ? (avg >= 100 ? '🐸「ぜんぶ できたね! はなまる💮」' : avg >= 60 ? '🐸「よく できました!」' : '🐸「だいじょうぶ。まいにち すこしずつ」') : avg >= 90 ? '音程ぴったり!🎉' : avg >= 80 ? 'すばらしい音程!' : avg >= 65 ? '合格!いい調子' : '声は毎日で変わります。続けよう'}</div>
+      <div class="res-msg">${VG.kid ? (avg >= 100 ? '🐸「ぜんぶ できたね! はなまる💮」' : avg >= 60 ? '🐸「よく できました!」' : '🐸「だいじょうぶ。まいにち すこしずつ」') : kid ? (avg >= 100 ? 'すべてクリア!🎉' : avg >= 60 ? 'よくできました!' : '毎日少しずつ。続けよう') : avg >= 90 ? '音程ぴったり!🎉' : avg >= 80 ? 'すばらしい音程!' : avg >= 65 ? '合格!いい調子' : '声は毎日で変わります。続けよう'}</div>
       <div class="res-xp"><span class="chip gold">+${xp} XP</span>
         ${tend !== null ? `<span class="chip">平均 ${tend > 0 ? '+' : ''}${Math.round(tend)}¢ ${Math.abs(tend) <= 8 ? 'ジャスト' : tend > 0 ? '高め' : '低め'}</span>` : ''}
         ${sdAvg !== null && !kid ? `<span class="chip">ゆれ ±${Math.round(sdAvg)}¢</span>` : ''}</div>
       ${notices.map(n => `<div class="notice">${n}</div>`).join('')}
       ${goalLine()}
     </div>
+    ${l.id === 'warmup' ? `<div class="card"><h3>📈 音程の平均ずれ(毎日の記録)</h3>${voiceGrowthSVG()}</div>` : ''}
+    ${l.id === 'vrange' ? `<div class="card"><h3>📏 声域の記録</h3>${voiceRangeHTML()}</div>` : ''}
     <div class="card"><h3>${kid ? 'できたこと' : '1音ずつの結果'}</h3>
       ${meds.length ? '<p class="small muted" style="margin-bottom:6px">中央の線がぴったり。緑の帯 = ±10¢ / 薄い帯 = ±25¢</p>' : ''}
       ${rows}
@@ -3786,6 +3986,7 @@ function vEnd(){
   if(stars === 3) confetti();
 }
 function vQuit(){
+  vAlongStop();
   if(VG){ VG.alive = false; cancelAnimationFrame(VG.raf); }
   micStop(); stopAll(); VG = null;
   document.body.classList.remove('in-game');
@@ -3797,18 +3998,20 @@ function buildVPlay(){
     <div class="rp-head">
       <button class="icon-btn" onclick="vQuit()">✕</button>
       <div class="grow" style="min-width:0"><div class="rp-title">${l.track.icon} ${esc(l.t)}</div>
-        <div class="rp-phase">${match ? `${voiceKeyLabel(VG.kpc)} ・ ${VG.targets.length}音${state.voice.easy || VG.kid ? ' ・ お手本あり' : ''}` : `${VG.targets.length}つの かだい`}</div></div>
+        <div class="rp-phase">${match ? `${voiceKeyLabel(VG.kpc)} ・ ${VG.targets.length}${VG.targets.some(t => t.task) ? 'ステップ' : '音'}${state.voice.easy || VG.pass ? ' ・ お手本あり' : ''}${state.voice.along ? ' ・ 🎧いっしょに' : ''}${state.voice.guideVoice ? ' ・ 🗣人の声' : ''}` : `${VG.targets.length}つの かだい`}</div></div>
     </div>
     <div class="mic-targets" id="vT" style="margin-top:8px"></div>
     <div class="vmsg" id="vMsg">🎤 マイクを準備中…</div>
     <div class="vhint" id="vHint"></div>
     <div class="vcv-wrap"><canvas id="vCanvas"></canvas><div class="vnow" id="vNow"></div></div>
     <div class="vlvl-wrap"><span>🎤 こえの おおきさ</span><div class="vlvl"><div id="vLvl"></div></div></div>
-    ${match ? `<div class="row wrap" style="justify-content:center;margin:10px 0">
+    <div id="vBtnM" class="row wrap" style="justify-content:center;margin:10px 0${match ? '' : ';display:none'}">
       <button class="btn sm" onclick="if(VG&&VG.phase==='sing'){stopAll();keyRef(VG.tonic,VG.minor);}">🎼 キー</button>
-      <button class="btn sm primary" onclick="if(VG&&VG.phase==='sing'){VG.hinted=true;stopAll();note(VG.tonic+VG.targets[VG.i].semi,0,.65,1.1);}">🔊 目標の音</button>
+      <button class="btn sm primary" onclick="if(VG&&VG.phase==='sing'){VG.hinted=true;vGuide(VG.tonic+VG.targets[VG.i].semi,1.1);}">🔊 目標の音</button>
       <button class="btn sm" onclick="if(VG&&VG.phase==='sing'){vScore();}">⏭ スキップ</button>
-    </div>` : `<div class="row wrap" style="justify-content:center;margin:10px 0"><button class="btn sm" onclick="if(VG&&VG.phase==='sing'){vTask(false);}">⏭ つぎへ</button></div>`}
+      <button class="btn sm" onclick="state.voice.along=!state.voice.along;save();this.classList.toggle('primary',state.voice.along);if(VG&&VG.phase==='sing'&&!VG.targets[VG.i].task){state.voice.along?vAlongStart(VG.tonic+VG.targets[VG.i].semi):vAlongStop();}" class="${state.voice.along ? 'primary' : ''}">🎧 いっしょに</button>
+    </div>
+    <div id="vBtnT" class="row wrap" style="justify-content:center;margin:10px 0${match ? ';display:none' : ''}"><button class="btn sm" onclick="if(VG&&VG.phase==='sing'){const t=VG.targets[VG.i].task;vTask(t==='lowest'||t==='highest'?VG.best!=null:false);}">⏭ つぎへ</button></div>
     <p class="center small muted">${match ? 'オクターブは問いません。玉を<b>目標の帯</b>に入れて「あー」と伸ばしてください。' : '玉が あなたの こえの たかさ。うえに いくほど たかい こえです。'}</p>`;
 }
 function drawVTargets(){
@@ -3821,8 +4024,8 @@ function drawVTargets(){
     }
     const s = mod(t.semi, 12);
     const cls = 'mic-t' + (i === VG.i ? ' cur' : '') + (r ? ' hit' : '');
-    const badge = r ? `<small>${VG.kid ? (r.pass ? '💮' : '—') : r.score}</small>` : `<small>${DEGNUM[s]}</small>`;
-    const bad = r && (VG.kid ? !r.pass : r.score < 55);
+    const badge = r ? `<small>${VG.pass ? (r.pass ? '💮' : '—') : r.score}</small>` : `<small>${DEGNUM[s]}</small>`;
+    const bad = r && (VG.pass ? !r.pass : r.score < 55);
     return `<div class="${cls}" style="background:${DEG_COLOR[s]};color:${DEG_INK[s]};min-width:46px;height:52px;font-size:15px${bad ? ';outline:3px solid #E5564B' : ''}">${vLabel(t.semi)}${badge}</div>`;
   }).join('');
 }
@@ -3836,8 +4039,8 @@ function vDraw(){
     const g = cv.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0);
     g.clearRect(0, 0, W, H);
     const tg = VG.targets[VG.i];
-    const match = VG.mode === 'match';
-    const R = 7, top = 22, bot = H - 22, L = 46;
+    const match = !!tg && !tg.task;
+    const R = tg && (tg.task === 'lowest' || tg.task === 'highest') ? 14 : 7, top = 22, bot = H - 22, L = 46;
     const yOf = rel => (top + bot) / 2 - rel / R * ((bot - top) / 2);
     const center = match && tg ? VG.tonic + tg.semi : homeBase();
     g.textBaseline = 'middle';
@@ -3855,7 +4058,7 @@ function vDraw(){
     g.fillStyle = '#4C9BEA'; g.fillText('▼ ひくい', W - 8, H - 10);
     // 目標(またはゴール)の帯
     if(match && tg){
-      const tol = (VG.kid ? VG.tol : 25) / 100, col = DEG_COLOR[mod(tg.semi, 12)];
+      const tol = (VG.pass ? VG.tol : 25) / 100, col = DEG_COLOR[mod(tg.semi, 12)];
       g.fillStyle = hexA(col, .25); g.fillRect(L, yOf(tol), W - L - 8, yOf(-tol) - yOf(tol));
       g.fillStyle = col; g.fillRect(L, yOf(0) - 2, W - L - 8, 4);
       g.font = '900 16px "Hiragino Sans",sans-serif'; g.textAlign = 'left';
@@ -3870,6 +4073,11 @@ function vDraw(){
         g.fillStyle = 'rgba(63,191,106,.18)'; g.fillRect(L, Math.min(yOf(a), yOf(b)), W - L - 8, Math.abs(yOf(a) - yOf(b)));
         g.fillStyle = '#2E8B4E'; g.fillText(tg.task === 'high' ? '⬆ ここまで あげよう' : '⬇ ここまで さげよう', L + 6, yOf(a + (tg.task === 'high' ? 1 : -1)));
       }
+      if((tg.task === 'lowest' || tg.task === 'highest') && VG.best != null){
+        const b = clamp(VG.best - center, -R, R);
+        g.fillStyle = '#E0A21B'; g.fillRect(L, yOf(b) - 2, W - L - 8, 4);
+        g.fillText('🏁 記録 ' + midiName(VG.best), L + 6, yOf(b) + (tg.task === 'lowest' ? 14 : -12));
+      }
       if((tg.task === 'up' || tg.task === 'down') && VG.seg){
         const start = (tg.task === 'up' ? VG.seg.min : VG.seg.max) - center, goal = start + (tg.task === 'up' ? 6 : -6);
         g.fillStyle = '#2E8B4E'; g.fillRect(L, yOf(clamp(goal, -R, R)) - 2, W - L - 8, 4);
@@ -3878,7 +4086,7 @@ function vDraw(){
     }
     // 軌跡
     const now = performance.now(), span = 3500, xBall = W * .62;
-    const tolS = (VG.kid ? VG.tol : 25) / 100;
+    const tolS = (VG.pass ? VG.tol : 25) / 100;
     const colOf = rel => !match ? '#2F7DE1' : Math.abs(rel) <= tolS ? '#2FA65A' : Math.abs(rel) <= .7 ? '#E0A21B' : '#E5564B';
     let prev = null;
     g.lineWidth = 4; g.lineCap = 'round';
@@ -3911,7 +4119,7 @@ function vDraw(){
     }
     // 採点までの進み具合
     if(VG.phase === 'sing' && match){
-      g.fillStyle = '#3FBF6A'; g.fillRect(0, H - 5, W * Math.min(1, VG.voiced / (VG.hold * 1000)), 5);
+      g.fillStyle = '#3FBF6A'; g.fillRect(0, H - 5, W * Math.min(1, VG.voiced / ((tg.hold || VG.hold) * 1000)), 5);
     }
   }
   VG.raf = requestAnimationFrame(vDraw);
@@ -4092,6 +4300,7 @@ function rushEnd(){
   const notices = [];
   if(newRec && a.best) notices.push(`🏆 自己ベスト更新!(前回 ${a.best.toLocaleString()})`);
   planCheck(notices);
+  logEvents(notices.map(n => '🚀 音階ラッシュ ' + n));
   save();
   checkAch();
   const avgRt = r.rts.length ? r.rts.reduce((x, y) => x + y, 0) / r.rts.length / 1000 : null;
@@ -4228,6 +4437,7 @@ function renderHome(){
         <button class="ta-btn" onclick="setTab('arcade')"><b>🎮 ゲーム一覧</b><span>ヒーロー・60秒チャレンジ ほか</span></button>
       </div>
     </div>
+    ${weeklyCardHTML()}
     <div class="card tip"><b>💡 今日のヒント</b><div class="small" style="margin-top:4px">${tip}</div></div>
     ${state.totals.q === 0 ? `<div class="card"><h3>👋 はじめての方へ</h3><p class="small">このアプリは「移動ド」で音の<b>役割</b>を聴き取る<b>音感</b>と、ギターに必要な<b>リズム感</b>を鍛えるトレーナーです。おすすめの順番:① 読み物「移動ドとは」 ② 音感「度数聴音 1」 ③ リズムタブで「タップ遅延の調整」 ④ ゲームの「かえるのうた」。</p><div class="row wrap" style="margin-top:8px"><button class="btn sm" onclick="openArticle('movable')">📖 移動ドとは</button><button class="btn sm primary" onclick="openLesson('deg1')">最初のレッスン</button></div></div>` : ''}`;
 }
@@ -4236,15 +4446,22 @@ function kidsCardHTML(){
   const tr = TRACKS.find(t => t.id === 'kids'); if(!tr) return '';
   const nx = nextLessonOf(tr);
   const done = tr.lessons.filter(l => starsOf(l.id) >= 1).length;
-  if(!nx) return '';
-  return `<div class="card kids-card"><div class="row">
-    <div style="font-size:40px">🐣</div>
-    <div class="grow"><div style="font-weight:800">こども音楽教室 ・ はじめての発声</div>
-      <div class="small muted">${done} / ${tr.lessons.length} クリア ・ つぎは「${nx.t}」</div>
+  const warmDone = !!(today().done || {}).warm;
+  const rl = state.voice.rangeLog || [], lastR = rl[rl.length - 1];
+  return `<div class="card kids-card">
+    <h3 style="margin-bottom:4px">🎙️ 声のトレーニング</h3>
+    ${nx ? `<div class="plan-item"><div style="font-size:28px">🐣</div>
+      <div class="grow"><div class="pt">こども音楽教室</div><div class="pd">${done} / ${tr.lessons.length} クリア ・ つぎは「${nx.t}」</div>
       <div class="track-prog"><div style="width:${done / tr.lessons.length * 100}%"></div></div></div>
-    <button class="btn primary" onclick="openLesson('${nx.id}')">つづける</button></div></div>`;
+      <button class="btn sm primary" onclick="openLesson('${nx.id}')">つづける</button></div>` : ''}
+    <div class="plan-item"><div style="font-size:28px">🌅</div>
+      <div class="grow"><div class="pt">毎日の発声ウォームアップ</div><div class="pd">約3分 ・ ${warmDone ? '<b style="color:var(--good)">今日は完了 ✓</b>' : '今日はまだ'} ・ 通算 ${state.totals.warmups || 0} 回</div></div>
+      <button class="btn sm ${warmDone ? '' : 'primary'}" onclick="openVLesson('warmup')">${warmDone ? 'もう一度' : 'はじめる'}</button></div>
+    <div class="plan-item"><div style="font-size:28px">📏</div>
+      <div class="grow"><div class="pt">声域チェック</div><div class="pd">${lastR ? `最新 ${midiName(lastR.lo)}〜${midiName(lastR.hi)}(${Math.round(lastR.hi - lastR.lo)}半音・${lastR.d.slice(5).replace('-', '/')})` : 'まだ測っていません'}</div></div>
+      <button class="btn sm" onclick="openVLesson('vrange')">はかる</button></div>
+  </div>`;
 }
-
 /* ---------- コース ---------- */
 function trackHTML(tr, openFn){
   const tot = tr.lessons.length * 3, got = tr.lessons.reduce((a, l) => a + starsOf(l.id), 0);
@@ -4422,7 +4639,7 @@ function renderStats(){
   }).join('');
   const nAch = ACH.filter(a => state.ach[a.id]).length;
   $('#v-stats').innerHTML = `
-    <h2>記録</h2>
+    <div class="row" style="margin:20px 2px 4px"><h2 class="grow" style="margin:0">記録</h2><button class="btn sm primary" onclick="openWeekly()">📅 週間レポート</button></div>
     <div class="stats-row">
       <div class="stat-box"><div class="num">Lv${lv.lv}</div><div class="lab">${lv.title}</div></div>
       <div class="stat-box"><div class="num">${state.xp.toLocaleString()}</div><div class="lab">累計XP</div></div>
@@ -4472,15 +4689,127 @@ function rhythmStatsHTML(){
 
 function voiceStatsHTML(){
   const rec = state.voice.recent;
-  if(!rec.length) return '';
-  const avg = rec.reduce((a, b) => a + b, 0) / rec.length;
-  const absAvg = rec.reduce((a, b) => a + Math.abs(b), 0) / rec.length;
-  const within = Math.round(rec.filter(x => Math.abs(x) <= 25).length / rec.length * 100);
-  return `<div class="card"><h3>🎙️ 発声の音程</h3><div class="stats-row">
-    <div class="stat-box"><div class="num">${Math.round(absAvg)}¢</div><div class="lab">平均のずれ(小さいほど正確)</div></div>
-    <div class="stat-box"><div class="num">${avg > 0 ? '+' : ''}${Math.round(avg)}¢</div><div class="lab">クセ:${Math.abs(avg) <= 8 ? 'なし(ジャスト)' : avg > 0 ? '高め(上ずり)' : '低め(ぶら下がり)'}</div></div>
-    <div class="stat-box"><div class="num">${within}%</div><div class="lab">±25¢以内に入った割合</div></div>
-  </div><p class="small muted" style="margin-top:6px">直近 ${rec.length} 音の集計</p></div>`;
+  const hasRange = (state.voice.rangeLog || []).length;
+  if(!rec.length && !hasRange) return '';
+  let h = '<div class="card"><h3>🎙️ 発声の音程</h3>';
+  if(rec.length){
+    const avg = rec.reduce((a, b) => a + b, 0) / rec.length;
+    const absAvg = rec.reduce((a, b) => a + Math.abs(b), 0) / rec.length;
+    const within = Math.round(rec.filter(x => Math.abs(x) <= 25).length / rec.length * 100);
+    h += `<div class="stats-row">
+      <div class="stat-box"><div class="num">${Math.round(absAvg)}¢</div><div class="lab">平均のずれ(小さいほど正確)</div></div>
+      <div class="stat-box"><div class="num">${avg > 0 ? '+' : ''}${Math.round(avg)}¢</div><div class="lab">クセ:${Math.abs(avg) <= 8 ? 'なし(ジャスト)' : avg > 0 ? '高め(上ずり)' : '低め(ぶら下がり)'}</div></div>
+      <div class="stat-box"><div class="num">${within}%</div><div class="lab">±25¢以内に入った割合</div></div>
+    </div><p class="small muted" style="margin:6px 0 10px">直近 ${rec.length} 音の集計</p>
+    <h3>📈 毎日の音程の平均ずれ</h3>${voiceGrowthSVG()}`;
+  }
+  h += `<h3 style="margin-top:12px">📏 声域の記録</h3>${voiceRangeHTML()}<div style="margin-top:6px"><button class="btn sm" onclick="openVLesson('vrange')">📏 声域を測る</button></div></div>`;
+  return h;
+}
+
+
+/* ---------- 週間レポート ---------- */
+// 成果(★・自己ベスト・解放・実績)を日付つきで記録しておき、レポートに載せる
+function logEvents(list){
+  const keep = /★|🏆|✨|🔓|🎉|📏|FULL COMBO/;
+  const d = todayStr();
+  state.log = state.log || [];
+  list.filter(x => keep.test(x)).forEach(x => state.log.push({d, s:String(x).replace(/<[^>]+>/g, '')}));
+  if(state.log.length > 200) state.log = state.log.slice(-200);
+}
+function weekSum(from){            // from = 0 → 直近7日、-7 → その前の7日
+  const w = {days:0, xp:0, q:0, c:0, vN:0, vAbs:0, rN:0, rAbs:0, rSum:0, goal:0, perDay:[]};
+  for(let i = from - 6; i <= from; i++){
+    const k = dayOffset(i), d = state.days[k] || {};
+    if(d.q || d.xp) w.days++;
+    if(d.goal) w.goal++;
+    w.xp += d.xp || 0; w.q += d.q || 0; w.c += d.c || 0;
+    w.vN += d.vN || 0; w.vAbs += d.vAbs || 0; w.rN += d.rN || 0; w.rAbs += d.rAbs || 0; w.rSum += d.rSum || 0;
+    w.perDay.push({k, xp:d.xp || 0});
+  }
+  return w;
+}
+// 苦手の項目を読みやすい名前に
+function itemLabel(k){
+  const [p, v] = k.split(':');
+  if(p === 'deg') return {t:`度数「${SOLFA[+v]}」の聴き取り`, l:'deg'};
+  if(p === 'degm') return {t:`短調の「${SOLFA[+v]}」`, l:'deg7'};
+  if(p === 'int'){ const s = parseInt(v), d = v.slice(-1); return {t:`${INTERVALS[s] ? INTERVALS[s].name : ''}(${d === 'u' ? '上行' : d === 'd' ? '下行' : '同時'})`, l:'int'}; }
+  if(p === 'fn'){ const [st, f] = v.split('-'); return {t:`${+st + 1}弦${f}フレットの音名`, l:'fret'}; }
+  if(p === 'ff') return {t:`「${fmtSpellPlain(spell(+v))}」を指板で探す`, l:'fret7'};
+  if(p === 'fd' || p === 'fdf' || p === 'ef') return {t:`指板の度数「${SOLFA[+v]}」`, l:'fret8'};
+  if(p === 'chd') return {t:`コード「${QUALITIES[v] ? QUALITIES[v].name : v}」`, l:'chd'};
+  if(p === 'sn' || p === 'sf') return {t:`譜読み ${midiName(+v)}`, l:'read'};
+  if(p === 'prog') return {t:`コード進行 ${v.split('-').join('–')}`, l:'chd5'};
+  if(p === 'rd') return {t:'リズム聴音', l:'rr1'};
+  return null;
+}
+function weakItems(){
+  const now = Date.now();
+  return Object.entries(state.items)
+    .filter(([k, it]) => it.n >= 5 && now - (it.t || 0) < 21 * 864e5 && itemLabel(k))
+    .map(([k, it]) => ({k, acc:it.c / it.n, n:it.n, ...itemLabel(k)}))
+    .filter(x => x.acc < .8)
+    .sort((a, b) => a.acc - b.acc).slice(0, 3);
+}
+function weekKey(){ const d = new Date(); d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return todayStr(d); }   // 今週の月曜日
+function openWeekly(){
+  const w = weekSum(0), p = weekSum(-7);
+  state.reportSeen = weekKey(); save();
+  const delta = (a, b, unit = '', better = 'up', digits = 0) => {
+    if(b === null || a === null || (!b && !a)) return '';
+    const d = a - b; if(Math.abs(d) < (digits ? .5 : 1)) return '<span class="dl">±0</span>';
+    const good = better === 'up' ? d > 0 : d < 0;
+    return `<span class="dl ${good ? 'up' : 'down'}">${d > 0 ? '▲' : '▼'}${Math.abs(d).toFixed(digits)}${unit}</span>`;
+  };
+  const acc = x => x.q ? Math.round(x.c / x.q * 100) : null;
+  const vAvg = x => x.vN ? x.vAbs / x.vN : null;
+  const rAvg = x => x.rN ? x.rAbs / x.rN : null;
+  const mx = Math.max(S().goal, ...w.perDay.map(d => d.xp));
+  const wk = ['日','月','火','水','木','金','土'];
+  const events = (state.log || []).filter(e => e.d >= dayOffset(-6)).slice(-8).reverse();
+  const weak = weakItems();
+  // ひとことコメント
+  let comment;
+  if(!w.days) comment = '今週はまだ練習がありません。5分だけでも始めてみましょう!';
+  else if(w.days > p.days) comment = `先週より練習した日が <b>${w.days - p.days}日</b> 増えました。いい流れです!`;
+  else if(vAvg(w) !== null && vAvg(p) !== null && vAvg(w) < vAvg(p) - 2) comment = `声の音程が先週より <b>${Math.round(vAvg(p) - vAvg(w))}¢</b> 正確になりました!`;
+  else if(acc(w) !== null && acc(p) !== null && acc(w) > acc(p)) comment = `正答率が先週より <b>${acc(w) - acc(p)}%</b> 上がりました!`;
+  else comment = `今週は <b>${w.days}日</b> 練習しました。この調子で続けましょう。`;
+  const box = (num, lab, dl) => `<div class="stat-box"><div class="num">${num}</div><div class="lab">${lab}</div>${dl ? `<div class="small">${dl}</div>` : ''}</div>`;
+  const sug = [];
+  if(weak.length) sug.push(`<button class="btn sm primary" onclick="closeSheet();startMix()">🔀 苦手をミックスで復習</button>`);
+  if(vAvg(w) === null || vAvg(w) > 25) sug.push(`<button class="btn sm" onclick="closeSheet();openVLesson('warmup')">🌅 発声ウォームアップ</button>`);
+  if(rAvg(w) === null) sug.push(`<button class="btn sm" onclick="closeSheet();setTab('rhythm')">🥁 リズムレッスン</button>`);
+  openSheet(`
+    <div class="sheet-head"><h3>📅 週間レポート</h3><button class="icon-btn" onclick="closeSheet()">✕</button></div>
+    <p class="small muted">${dayOffset(-6).slice(5).replace('-', '/')} 〜 ${dayOffset(0).slice(5).replace('-', '/')}(▲▼は前の7日との比較)</p>
+    <div class="notice" style="font-weight:400;text-align:left">💬 ${comment}</div>
+    <div class="stats-row" style="margin-top:8px">
+      ${box(`${w.days}<span style="font-size:13px">/7日</span>`, '練習した日', delta(w.days, p.days, '日'))}
+      ${box(w.xp.toLocaleString(), '獲得XP', delta(w.xp, p.xp))}
+      ${box(w.q, '回答数', delta(w.q, p.q))}
+      ${box(acc(w) === null ? '—' : acc(w) + '%', '正答率', delta(acc(w), acc(p), '%'))}
+      ${box(vAvg(w) === null ? '—' : Math.round(vAvg(w)) + '¢', '声の音程のずれ', delta(vAvg(w), vAvg(p), '¢', 'down'))}
+      ${box(rAvg(w) === null ? '—' : Math.round(rAvg(w)) + 'ms', 'リズムのずれ', delta(rAvg(w), rAvg(p), 'ms', 'down'))}
+    </div>
+    <h3 style="margin-top:14px">毎日のXP</h3>
+    <div class="bars">${w.perDay.map(d => { const dt = new Date(d.k + 'T00:00'); return `<div class="bar"><span>${d.xp || ''}</span><div class="${d.xp >= S().goal ? 'g' : ''}" style="height:${d.xp / mx * 80}%"></div>${wk[dt.getDay()]}</div>`; }).join('')}</div>
+    <p class="small muted">目標達成 ${w.goal}日 ・ 連続 ${liveStreak()}日</p>
+    <h3 style="margin-top:14px">🏅 今週の成果</h3>
+    ${events.length ? `<ul class="small" style="margin-left:18px">${events.map(e => `<li>${esc(e.s)} <span class="muted">${e.d.slice(5).replace('-', '/')}</span></li>`).join('')}</ul>` : '<p class="small muted">これから記録されます(★の獲得・自己ベスト・新しいレッスン解放など)。</p>'}
+    <h3 style="margin-top:14px">🎯 苦手トップ3</h3>
+    ${weak.length ? weak.map(x => `<div class="vrow"><span class="grow small">${esc(x.t)}</span><span class="small muted">${x.n}回</span><b class="small" style="width:44px;text-align:right;color:${x.acc < .55 ? 'var(--bad)' : 'var(--accent)'}">${Math.round(x.acc * 100)}%</b></div>`).join('')
+                  : '<p class="small muted">目立った苦手はありません(5回以上出題された項目から集計)。</p>'}
+    ${sug.length ? `<h3 style="margin-top:14px">💡 来週のおすすめ</h3><div class="row wrap">${sug.join('')}</div>` : ''}`);
+}
+function weeklyCardHTML(){
+  const w = weekSum(0);
+  const isNew = state.reportSeen !== weekKey() && new Date().getDay() === 1;
+  return `<div class="card row" style="gap:12px${isNew ? ';border:2px solid var(--brand)' : ''}">
+    <div style="font-size:30px">📅</div>
+    <div class="grow"><div style="font-weight:800">週間レポート${isNew ? ' <span class="chip">NEW</span>' : ''}</div><div class="small muted">直近7日:練習 ${w.days}日 ・ ${w.xp.toLocaleString()} XP</div></div>
+    <button class="btn sm ${isNew ? 'primary' : ''}" onclick="openWeekly()">見る</button></div>`;
 }
 
 /* ---------- マイクのテスト ---------- */
@@ -4526,6 +4855,8 @@ function renderSettings(){
       <div class="set-row"><div class="sl">音量</div><input type="range" min="0.1" max="1.5" step="0.05" value="${s.volume}" id="setVol"></div>
       <div class="set-row"><div class="sl">メロディの速さ</div>${seg('tempo', [['1.3','ゆっくり'],['1','ふつう'],['0.8','速い']])}</div>
       <div class="set-row"><div class="sl">マイク<small>視唱・発声コースで使用</small></div><button class="btn sm" onclick="micTest()">🎤 マイクのテスト</button></div>
+      <div class="set-row"><div class="sl">声のお手本の音色<small>人の声(「あー」)のほうが声を合わせやすい</small></div><div class="seg"><button class="${state.voice.guideVoice ? 'on' : ''}" onclick="state.voice.guideVoice=true;save();renderSettings()">🗣 人の声</button><button class="${state.voice.guideVoice ? '' : 'on'}" onclick="state.voice.guideVoice=false;save();renderSettings()">🎸 楽器</button></div></div>
+      <div class="set-row"><div class="sl">いっしょに歌う<small>歌っている間もお手本を鳴らし続ける(イヤホン必須)</small></div><input type="checkbox" ${state.voice.along ? 'checked' : ''} onchange="state.voice.along=this.checked;save()"></div>
       <div class="set-row"><div class="sl">あなたの声の高さ<small>${state.voice.home ? midiName(state.voice.home) + ' くらい(お手本をこの近くで鳴らします)' : '未測定'}</small></div><button class="btn sm" onclick="startVoice('kd2')">📏 はかる</button></div>
       <div class="set-row"><div class="sl">効果音</div><input type="checkbox" id="setSfx" ${s.sfx ? 'checked' : ''}></div>
       <div class="set-row"><div class="sl">正解したら自動で次へ</div><input type="checkbox" id="setAuto" ${s.autoNext ? 'checked' : ''}></div>
