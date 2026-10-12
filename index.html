@@ -392,6 +392,13 @@ input[type=checkbox]{accent-color:var(--brand);width:20px;height:20px}
 .arc-card{border-radius:18px;padding:14px;cursor:pointer;color:#fff;box-shadow:var(--shadow);transition:transform .08s}
 .arc-card:active{transform:scale(.97)}
 .arc-card.echo{background:linear-gradient(135deg,#2F6FD6,#6B4FD1)}
+.arc-card.recho{background:linear-gradient(135deg,#E0A21B,#D9611E)}
+.rnota{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:4px 8px;margin:6px 0}
+.rnota.small{padding:0 6px;opacity:.8;border-style:dashed}
+.rnota-opt{width:100%;background:var(--card);border-radius:8px}
+.tapzone.mic{flex-direction:column;text-align:center;color:var(--text)}
+.cc-panel{display:flex;align-items:center;justify-content:center;gap:16px;margin:4px 0;min-height:130px}
+.cc-next{text-align:center;opacity:.75}
 .arc-card.surv{background:linear-gradient(135deg,#D9611E,#C73B5A)}
 .arc-i{font-size:30px}
 .arc-t{font-weight:900;font-size:16px}
@@ -876,6 +883,7 @@ async function micStart(cb){
     }
     MIC.stream = stream;
     const src = c.createMediaStreamSource(MIC.stream);
+    MIC.src = src;
     MIC.an = c.createAnalyser();
     MIC.an.fftSize = 2048;
     src.connect(MIC.an);
@@ -976,7 +984,7 @@ function load(){
   state.ach = state.ach || {};
   state.totals = Object.assign({q:0, c:0, perfect:0, maxCombo:0, mic:0, goalDays:0, planDays:0, rounds:0, articles:0}, state.totals || {});
   state.read = state.read || {};
-  state.rhythm = Object.assign({calibMs:0, calibrated:false, diff:'normal', du:false, speed:1, recent:[]}, state.rhythm || {});
+  state.rhythm = Object.assign({calibMs:0, calibrated:false, diff:'normal', du:false, speed:1, recent:[], micLat:0, micCal:false, micSens:'normal', nota:'grid', keepLog:[], ccLog:[]}, state.rhythm || {});
   state.arcade = Object.assign({hero:{}, heroClear:{}, echo:null, surv:null, rush:null, rushLv:0, slow:false}, state.arcade || {});
   state.voice = Object.assign({high:false, recent:[], key:'C', easy:true, home:null, guideVoice:true, along:false, rangeLog:[]}, state.voice || {});
   state.created = state.created || todayStr();
@@ -1261,6 +1269,66 @@ function parseSong(song){
   return {ev, beats:b};
 }
 
+/* ---------- ストローク・パターン集 ---------- */
+const P8 = {
+  half:  SM([[0,'D'],[8,'D']]),
+  ddud:  SM([[0,'D'],[4,'D'],[8,'D'],[10,'U'],[12,'D']]),
+  dudd:  SM([[0,'D'],[2,'U'],[4,'D'],[6,'U'],[8,'D'],[12,'D']]),
+  basic: SM([[0,'D'],[4,'D'],[6,'U'],[8,'D'],[10,'U'],[12,'D'],[14,'U']]),
+  rock:  SM([0,2,4,6,8,10,12,14].map(t => [t,'D'])),
+  shuf:  SM([[0,'D'],[2,'U'],[4,'D'],[6,'U'],[8,'D'],[10,'U'],[12,'D'],[14,'U']]),
+  ska:   SM([[2,'U'],[6,'U'],[10,'U'],[14,'U']]),
+};
+const P16 = {
+  gallop:SM([0,4,8,12].flatMap(b => [[b,'D'],[b + 2,'D'],[b + 3,'U']])),
+  tkt:   SM([0,4,8,12].flatMap(b => [[b,'D'],[b + 1,'U'],[b + 2,'D']])),
+  ura:   SM([[0,'D'],[2,'D'],[3,'U'],[6,'D'],[7,'U'],[8,'D'],[10,'D'],[11,'U'],[14,'D'],[15,'U']]),
+  funk:  SM([[0,'D'],[3,'U'],[4,'X'],[6,'D'],[7,'U'],[8,'X'],[10,'D'],[11,'U'],[12,'X'],[14,'D'],[15,'U']]),
+  cut:   SM([[0,'D'],[1,'U'],[2,'X'],[3,'U'],[4,'D'],[6,'X'],[7,'U'],[8,'D'],[9,'U'],[10,'X'],[11,'U'],[12,'D'],[14,'X'],[15,'U']]),
+};
+RTRACKS.push(
+  {id:'spat', icon:'🎼', name:'ストローク・パターン集', area:'rhythm', art:'strum',
+   sub:'8ビート・16ビートの定番パターンを1つずつ。🎤マイク入力にすると本物のギターで判定',
+   lessons:[
+    {id:'sp1', t:'2拍ずつダウン',        d:'1拍目と3拍目だけ大きくジャーン。コードを押さえる練習とセットで。', rt:'strum', bpms:[60,75,90], demo:2, pat:P8.half},
+    {id:'sp2', t:'D D DU D',             d:'3拍目だけ8分で往復。「ジャン ジャン ジャカ ジャン」。', rt:'strum', bpms:[60,80,100], demo:2, pat:P8.ddud},
+    {id:'sp3', t:'DU DU D D',            d:'前半8分、後半4分。「ジャカ ジャカ ジャン ジャン」。', rt:'strum', bpms:[60,80,100], demo:2, pat:P8.dudd},
+    {id:'sp4', t:'8ビート基本',          d:'「ジャン ジャカ ジャカ ジャカ」。弾き語りで一番よく使う形。', rt:'strum', bpms:[60,80,100], demo:2, pat:P8.basic},
+    {id:'sp5', t:'ロックの8分ダウン',     d:'全部ダウンで8分。パワーコードのロックの基本。腕の脱力が大事。', rt:'strum', bpms:[80,100,120], demo:2, pat:P8.rock},
+    {id:'sp6', t:'シャッフル(ハネる8分)', d:'「タッカ タッカ」と跳ねる8分。ブルースやロックンロールのノリ。', rt:'strum', bpms:[60,80,100], demo:2, pat:P8.shuf, swing:8},
+    {id:'sp7', t:'裏打ち(スカ・レゲエ)', d:'拍のウラだけアップで「チャッ」。ダウンは空振り。', rt:'strum', bpms:[80,100,120], demo:2, pat:P8.ska},
+    {id:'sp8', t:'16分「タ タカ」',       d:'8分+16分2つの「ギャロップ」。', rt:'strum', bpms:[50,65,80], demo:2, pat:P16.gallop},
+    {id:'sp9', t:'16分「タカ タ」',       d:'16分2つ+8分。', rt:'strum', bpms:[50,65,80], demo:2, pat:P16.tkt},
+    {id:'sp10',t:'16ビート(裏入り)',      d:'16分の裏にアップが入る、軽快な16ビート。', rt:'strum', bpms:[50,65,80], demo:2, pat:P16.ura},
+    {id:'sp11',t:'ファンク・カッティング',d:'✕はミュートの「チャッ」。音と無音のメリハリ。', rt:'strum', bpms:[50,65,80], demo:2, pat:P16.funk},
+    {id:'sp12',t:'16分カッティング',      d:'ほぼ16分すべてを弾き、✕で音を切る上級パターン。', rt:'strum', bpms:[50,60,72], demo:2, pat:P16.cut},
+    {id:'sp13',t:'8ビート・メドレー',     d:'8ビートのパターンが小節ごとに入れ替わる。NEXT を先読み!', rt:'strum', bpms:[60,80,100], demo:0, patGen:() => pick([P8.ddud, P8.dudd, P8.basic, P8.rock])},
+    {id:'sp14',t:'16ビート・メドレー',    d:'16ビートのパターンが入れ替わる。', rt:'strum', bpms:[50,65,80], demo:0, patGen:() => pick([P16.gallop, P16.tkt, P16.ura, P16.funk])},
+   ]},
+  {id:'rvoice', icon:'🗣', name:'リズム唱・手拍子', area:'rhythm', art:'rhythmvoice',
+   sub:'「タン・タタ・タカタカ」と声に出す/手拍子する。声と体でリズムを覚える(マイクで判定)',
+   lessons:[
+    {id:'rv1', t:'タン(4分音符)',     d:'1拍に1回「タン」。手拍子でもOK。', rt:'sight', level:'v1', mic:true, syll:true, bpms:[60,75,90], demo:1},
+    {id:'rv2', t:'タタ(8分音符)',     d:'1拍を2つに「タタ」。', rt:'sight', level:'v2', mic:true, syll:true, bpms:[60,75,90], demo:1},
+    {id:'rv3', t:'タンとタタ',        d:'4分と8分のまぜこぜ。譜面の下の言葉を声に出して。', rt:'sight', level:1, mic:true, syll:true, bpms:[60,75,90], demo:1},
+    {id:'rv4', t:'ウン(休符)とウタ',  d:'休符は心の中で「ウン」。裏から入る「ウタ」も。', rt:'sight', level:2, mic:true, syll:true, bpms:[60,75,90], demo:1},
+    {id:'rv5', t:'タカタカ(16分)',    d:'16分の「タカタカ」「タ タカ」「タカ タ」。', rt:'sight', level:3, mic:true, syll:true, bpms:[50,60,72], demo:1},
+    {id:'rv6', t:'タッカ(シャッフル)',d:'3連のノリ「タッカ」「タタタ」。', rt:'sight', level:'T', mic:true, syll:true, bpms:[60,75,90], demo:1},
+    {id:'rv7', t:'リズム唱ミックス',  d:'シンコペーションも入った総まとめ。', rt:'sight', level:4, mic:true, syll:true, bpms:[50,60,72], demo:0},
+   ]},
+);
+RLEVEL.v1 = {grid:4, cells:{q:1}};
+RLEVEL.v2 = {grid:4, cells:{e2:1}};
+// 読む練習を「音符」でも
+RTRACKS.find(t => t.id === 'rread').lessons.push(
+  {id:'rr8',  t:'音符で聴音:8分',   d:'聴こえたリズムを「本物の音符」の譜面から選ぶ。', gen:'rhythmDict', p:{level:2, bpm:80, view:'note'}},
+  {id:'rr9',  t:'音符で初見:8分',   d:'音符の譜面を見てそのまま叩く。', rt:'sight', level:2, nota:true, bpms:[70,85,100], demo:0},
+  {id:'rr10', t:'音符で聴音:16分',  d:'16分を含む音符の譜面。', gen:'rhythmDict', p:{level:3, bpm:70, view:'note'}},
+  {id:'rr11', t:'音符で初見:16分',  d:'16分を含む音符の譜面を初見で。', rt:'sight', level:3, nota:true, bpms:[60,70,80], demo:0},
+  {id:'rr12', t:'音符で聴音:シンコペ', d:'裏から入る・食うリズムを音符で。', gen:'rhythmDict', p:{level:4, bpm:70, view:'note'}},
+);
+
+
 { const first = ['kids', 'voice']; TRACKS.sort((a, b) => (first.includes(b.id) ? 1 : 0) - (first.includes(a.id) ? 1 : 0) || first.indexOf(a.id) - first.indexOf(b.id)); }
 TRACKS.forEach(tr => tr.area = 'ear');
 const ALL_TRACKS = TRACKS.concat(RTRACKS);
@@ -1423,6 +1491,12 @@ ARTICLES.push(
 <h4>⚡ リズム・サバイバル</h4>
 <p>ストロークパターンが途切れず続き、どんどん速くなります。MISS 3回で終了。16コンボで1回復。</p>`},
 );
+ARTICLES.push({id:'rhythmvoice', icon:'🗣', t:'リズム唱と手拍子', d:'タン・タタ・タカタカで覚える', html:`
+<p>リズムは<b>声に出すと一気に覚えやすく</b>なります。日本の音楽教室でよく使う言い方で、拍の分け方を言葉にします。</p>
+<table><tr><th>リズム</th><th>言い方</th></tr><tr><td>4分音符</td><td>タン</td></tr><tr><td>8分音符×2</td><td>タタ</td></tr><tr><td>4分休符</td><td>ウン</td></tr>
+<tr><td>8分休符+8分</td><td>ウタ</td></tr><tr><td>16分×4</td><td>タカタカ</td></tr><tr><td>8分+16分×2</td><td>タ タカ</td></tr><tr><td>16分×2+8分</td><td>タカ タ</td></tr><tr><td>シャッフル</td><td>タッカ</td></tr></table>
+<h4>マイクで判定するコツ</h4>
+<div class="box">・<b>イヤホン推奨</b>(お手本やクリックの音をマイクが拾わないように)<br>・はっきりした子音「<b>タ</b>」「<b>カ</b>」で。手拍子ならパン!と短く<br>・最初に一度「マイクの遅れを測る」をしておくと判定が正確になります<br>・ギターを弾くときも同じ。弾いた瞬間(アタック)を拾います</div>`});
 ARTICLES.push({id:'kids', icon:'🐣', t:'歌えると、耳が育つ', d:'こども音楽教室の進め方', html:`
 <p>幼児の音楽教育では「まず歌う」ことを大切にします。<b>自分の声で音を出せるようになると、頭の中で音を鳴らす力(内的聴覚)</b>が育ち、聴き分けもぐんと楽になります。</p>
 <h4>このコースの順番</h4>
@@ -1525,6 +1599,10 @@ const ACH = [
   {id:'v_first',i:'🎙️', n:'初めての発声',   d:'発声・音程レッスンを完了',   f:() => (state.totals.vNotes || 0) >= 1},
   {id:'v_ace',  i:'🎯', n:'絶対音程',        d:'発声レッスンで平均90点以上', f:() => (state.totals.vAce || 0) >= 1},
   {id:'v_100',  i:'🌟', n:'ぴったり×100',    d:'発声でPERFECTを通算100回',  f:() => (state.totals.vPerfect || 0) >= 100},
+  {id:'keep1',  i:'⏱', n:'テンポ診断',       d:'テンポキープ診断を受ける',      f:() => (state.totals.keeps || 0) >= 1},
+  {id:'keep24', i:'🕰', n:'内なるメトロノーム', d:'クリックなしで24拍キープ',      f:() => (state.rhythm.keepLog || []).some(r => r.keep >= 24)},
+  {id:'cc1',    i:'🎸', n:'持ち替え名人',     d:'コードチェンジを全部成功',      f:() => (state.rhythm.ccLog || []).some(r => r.n && r.ok === r.n)},
+  {id:'recho10',i:'👏', n:'リズムのやまびこ', d:'リズム・エコー10リズム',        f:() => ((state.arcade.recho || {}).best || 0) >= 10},
   {id:'warm7',  i:'🌅', n:'発声の習慣',     d:'ウォームアップを7回',          f:() => (state.totals.warmups || 0) >= 7},
   {id:'warm30', i:'☀️', n:'発声マスター',   d:'ウォームアップを30回',         f:() => (state.totals.warmups || 0) >= 30},
   {id:'range12',i:'🎼', n:'1オクターブの声', d:'声域が12半音以上',             f:() => (state.voice.rangeLog || []).some(r => r.hi - r.lo >= 12)},
@@ -2632,10 +2710,12 @@ function noteAt(midi, t, vol = 0.55, dur = 1, dest, inst){
     if(!dest) track(src, t + dur);
   }catch(e){}
 }
-function clickAt(t, accent, dest){
+function clickAt(t, accent, dest, hi){
   const c = AE.ctx, o = c.createOscillator(), g = c.createGain();
-  o.type = 'sine'; o.frequency.value = accent ? 1568 : 1047;
-  g.gain.setValueAtTime(accent ? .42 : .26, t);
+  o.type = 'sine'; o.frequency.value = hi ? (accent ? 3136 : 2637) : (accent ? 1568 : 1047);   // マイク入力時は高い音(マイク側で除去しやすい)
+  // 2msでなめらかに立ち上げる(急な立ち上がりの「プチッ」という広い帯域の雑音を出さない → マイクが拾わない)
+  g.gain.setValueAtTime(.0001, t);
+  g.gain.linearRampToValueAtTime(accent ? .42 : .26, t + .002);
   g.gain.exponentialRampToValueAtTime(.001, t + .05);
   o.connect(g); g.connect(dest || AE.master); o.start(t); o.stop(t + .06);
   if(!dest) track(o, t + .06);
@@ -2688,8 +2768,13 @@ function rgStart(cfg){
   if(RG) rgStop();
   RG = {cfg, bars:[], notes:[], counts:{P:0, G:0, O:0, M:0}, extra:0, score:0, combo:0, maxCombo:0,
         lives:cfg.lives || null, ended:false, diff:RDIFF[RS().diff] || RDIFF.normal,
-        start:c.currentTime + 0.6, bus:c.createGain(), curBar:-1, flash:{}, finalBar:false};
+        start:c.currentTime + (cfg.mic ? 1.2 : 0.6), bus:c.createGain(), curBar:-1, flash:{}, finalBar:false, raw:[]};
   RG.bus.connect(AE.master);
+  if(cfg.mic){
+    const me = RG;
+    onsetStart(t => { if(RG === me && !RG.ended) rgTap({mic:true, t:t - (RS().micLat || 0) / 1000}); })
+      .catch(err => { if(RG === me){ me.cfg.mic = false; const tz = $('#tapzone'); if(tz) tz.innerHTML = `<div class="small" style="padding:10px">${micErrorHTML(err)}<br>このままタップでも続けられます。</div>`; } });
+  }
   document.body.classList.add('in-game');
   showView('rplay');
   buildRPlay();
@@ -2706,7 +2791,7 @@ function evOffset(b, bar){
   return off;
 }
 function rgGenerate(){
-  const c = AE.ctx, horizon = c.currentTime + 2.6;
+  const c = AE.ctx, horizon = c.currentTime + Math.max(2.6, 4.8 * 60 / (RG.cfg.bpm || 100));   // 遅いテンポでも次の小節まで先に用意(表示用)
   while(!RG.finalBar && !RG.ended){
     const i = RG.bars.length;
     const prev = RG.bars[i - 1];
@@ -2719,7 +2804,7 @@ function rgGenerate(){
     b.events.forEach(e => e.time = t0 + evOffset(e.b, b));
     const clk = b.click || 'all';
     for(let k = 0; k < b.beats; k++){
-      if(clk === 'all' || (clk === 'backbeat' && k % 2 === 1)) clickAt(t0 + k * b.beat, k === 0 && clk === 'all', RG.bus);
+      if(clk === 'all' || (clk === 'backbeat' && k % 2 === 1)) clickAt(t0 + k * b.beat, k === 0 && clk === 'all', RG.bus, !!RG.cfg.mic);
     }
     if(b.sound) b.events.forEach(e => RG.cfg.sound(e, e.time, RG.bus));
     if(b.extra) b.extra(t0, RG.bus, b);
@@ -2747,7 +2832,8 @@ function barAt(t){ return RG.bars.find(b => t >= b.t0 && t < b.t0 + b.dur); }
 function rgTap(input = {}){
   if(!RG || RG.ended) return;
   const c = ac(), now = c.currentTime;
-  const tapT = now - (c.outputLatency || 0) - RS().calibMs / 1000;
+  const tapT = input.t != null ? input.t : now - (c.outputLatency || 0) - RS().calibMs / 1000;
+  RG.raw.push(tapT);
   const wideW = RG.diff.miss / 1000 + .06;
   let cand = null, bd = 1e9;
   for(const n of RG.notes){
@@ -2767,11 +2853,12 @@ function rgTap(input = {}){
     if(best && bb <= wideW){ cand = best; bd = bb; }
   }
   const hit = cand && bd <= wideW ? cand : null;
-  RG.cfg.tapSound(input, hit, RG.bus, now);
+  if(!input.mic) RG.cfg.tapSound(input, hit, RG.bus, now);
+  else{ const tz = $('#tapzone'); if(tz) ripple(tz, tz.clientWidth / 2, tz.clientHeight / 2); }
   if(RG.cfg.mode === 'lanes' && input.lane != null) RG.flash[input.lane] = {t:performance.now(), j:null};
   if(!hit){
     const bar = barAt(tapT);
-    if(!bar || !bar.judge){ showRJudge(null, null, bar && bar.hint ? bar.hint : '👂 まだ採点前'); return; }
+    if(!bar || !bar.judge){ if(!input.mic) showRJudge(null, null, bar && bar.hint ? bar.hint : '👂 まだ採点前'); return; }
     RG.extra++; RG.combo = 0;
     showRJudge('X', null);
     return;
@@ -2808,6 +2895,7 @@ function rgStop(){
   clearTimeout(RG.jt);
   try{ RG.bus.gain.setTargetAtTime(0, AE.ctx.currentTime, .02); setTimeout(() => { try{ RG.bus.disconnect(); }catch(e){} }, 200); }catch(e){}
   if(RG.lock) RG.lock.release().catch(() => {});
+  if(RG.cfg.mic) onsetStop();
 }
 function rgEnd(){
   if(!RG || RG.ended) return;
@@ -2842,11 +2930,14 @@ function buildRPlay(){
     </div>
     <div class="rp-hud"><span>SCORE <b id="rpScore">0</b></span><span id="rpLives"></span><span id="rpCombo" class="rp-combo"></span></div>
     ${lanes ? `<div class="hw-wrap"><canvas id="hwCanvas"></canvas><div class="hw-over" id="hwOver"></div></div>`
-            : `<div class="rbar-wrap"><div class="rbar" id="rbar"><div class="rph" id="rph"></div></div>
-               <div class="rnext-lab">NEXT</div><div class="rbar rnext" id="rnext"></div></div>`}
+            : `${cfg.chords ? '<div class="cc-panel" id="ccPanel"></div>' : ''}
+               ${cfg.nota ? '<div class="rnota" id="rnota"></div>' : ''}
+               <div class="rbar-wrap"><div class="rbar" id="rbar"><div class="rph" id="rph"></div></div>
+               <div class="rnext-lab">NEXT</div>${cfg.nota ? '<div class="rnota small" id="rnotaNext"></div>' : ''}<div class="rbar rnext" id="rnext"></div></div>`}
     <div class="rjudge"><div id="rjText"></div><div id="rjSub"></div></div>
     <div class="rcount" id="rcount"></div>
     ${lanes ? `<div class="lanes" id="laneBtns"></div>`
+            : cfg.mic ? `<div class="tapzone mic" id="tapzone"><div><div style="font-size:30px">🎤</div><b>ギター・手拍子・声で!</b><div class="small muted">タップでも入力できます</div><div class="vlvl" style="width:160px;margin:8px auto 0"><div id="micLvl"></div></div></div></div>`
             : cfg.du ? `<div class="tapzone du" id="tapzone"><div data-dir="D">▼ ダウン<small>F / ←</small></div><div data-dir="U">▲ アップ<small>J / →</small></div></div>`
                      : `<div class="tapzone" id="tapzone"><span>${matchMedia('(hover:hover)').matches ? 'スペース / F / J キー、またはクリック' : 'ここをタップ!'}</span></div>`}`;
   $('#rpQuit').onclick = () => { rgStop(); RG = null; document.body.classList.remove('in-game'); setTab(currentTab); };
@@ -2919,9 +3010,8 @@ function rgFrame(){
     $('#rpPhase').textContent = bar.label || '';
     $('#rpBpm').textContent = '♩=' + Math.round(bar.bpm);
     if(RG.cfg.mode !== 'lanes'){
-      drawBarNotes($('#rbar'), bar.type === 'count' ? RG.bars[bar.i + 1] : bar);
-      const nx = RG.bars[bar.i + (bar.type === 'count' ? 2 : 1)];
-      drawBarNotes($('#rnext'), nx && nx.events.length ? nx : null, true);
+      const show = bar.type === 'count' ? RG.bars[bar.i + 1] : bar;
+      drawBarView(show, RG.bars[bar.i + (bar.type === 'count' ? 2 : 1)]);
     }
     if(RG.cfg.onBarStart) RG.cfg.onBarStart(bar, RG);
   }
@@ -2934,6 +3024,7 @@ function rgFrame(){
     cnt.textContent = 'GO!'; cnt.className = 'rcount show go';
     setTimeout(() => { if(cnt.textContent === 'GO!') cnt.className = 'rcount'; }, 600);
   }
+  if(RG.cfg.mic){ const ml = $('#micLvl'); if(ml) ml.style.width = Math.min(100, ONS.level * 500) + '%'; }
   if(RG.cfg.mode === 'lanes') drawHighway(now);
   else{
     const ph = $('#rph');
@@ -3021,9 +3112,11 @@ function startRLesson(id, tier){
     else pats.push(l.patGen ? l.patGen(m) : l.pat);
   }
   const isStrum = l.rt === 'strum';
-  const du = isStrum && RS().du;
+  const mic = inputMode(l) === 'mic';
+  const du = isStrum && RS().du && !mic;
+  const nota = !!l.nota || (notaMode() !== 'grid' && l.rt !== 'pulse') || !!l.syll;
   rgStart({
-    title:`${l.track.icon} ${l.t}`, mode:'bar', bpm, du,
+    title:`${l.track.icon} ${l.t}`, mode:'bar', bpm, du, mic, nota, syll:!!l.syll, strumNota:isStrum,
     bar(i){
       if(i < L) return {type:'listen', events:patToEvents(pats[i % P]), sound:true, swing:l.swing, click:l.click ? l.click(0) : 'all', label:`👂 お手本 ${i + 1}/${L}(採点なし)`, hint:'👂 お手本中'};
       if(i === L) return {type:'count', events:[], label:'🎯 カウント', hint:'🎯 もうすぐ!'};
@@ -3434,10 +3527,10 @@ GEN.rhythmDict = function(p){
   const order = shuffle(opts);
   return {
     kind:'choice',
-    prompt:`クリック4つのあとの1小節。聴こえたリズムは?<span class="small muted" style="display:block;font-weight:400">■=叩く位置(1拍を${grid === 3 ? '3' : '4'}つに分割)</span>`,
+    prompt:`クリック4つのあとの1小節。聴こえたリズムは?<span class="small muted" style="display:block;font-weight:400">${(p.view || notaMode()) === 'note' ? '音符の譜面から選ぼう' : `■=叩く位置(1拍を${grid === 3 ? '3' : '4'}つに分割)`}</span>`,
     play: playIt,
     replays:[{label:'🐢 ゆっくり', fn(){ stopAll(); const c = ac(), b2 = beat * 1.35, t0 = c.currentTime + .15; for(let k = 0; k < 8; k++) clickAt(t0 + k * b2, k % 4 === 0); ans.hits.forEach(h => percAt(t0 + 4 * b2 + h * b2)); }}],
-    options: order.map(hits => ({value:rkey(hits), html:rhythmGridHTML(hits, grid)})),
+    options: order.map(hits => ({value:rkey(hits), html: (p.view || notaMode()) === 'note' ? `<div class="rnota-opt">${rhythmNotationSVG(hits, {h:80})}</div>` : (p.view || notaMode()) === 'both' ? `<div class="rnota-opt">${rhythmNotationSVG(hits, {h:80})}</div>${rhythmGridHTML(hits, grid)}` : rhythmGridHTML(hits, grid)})),
     correct: rkey(ans.hits),
     optClass:'rhythm',
     explain:'正解の譜面を確認しよう',
@@ -3461,7 +3554,8 @@ function tierChips(l){
 function openRLesson(id){
   const l = LESSONS[id];
   const ls = state.lessons[id] || {};
-  const prevPat = l.pat ? `<div class="rbar mini">${(() => { const d = document.createElement('div'); drawBarNotes(d, {events:patToEvents(l.pat)}, true); return d.innerHTML; })()}</div>` : '';
+  const prevNota = l.pat ? `<div class="rnota">${rhythmNotationSVG(l.pat.map(p => p[0]), {dirs:l.pat.map(p => p[1])})}</div>` : '';
+  const prevPat = l.pat ? prevNota + `<div class="rbar mini">${(() => { const d = document.createElement('div'); drawBarNotes(d, {events:patToEvents(l.pat)}, true); return d.innerHTML; })()}</div>` : '';
   openSheet(`
     <div class="sheet-head"><h3>${l.track.icon} ${l.t}</h3><button class="icon-btn" onclick="closeSheet()">✕</button></div>
     <div class="small muted">${l.track.name} ・ レッスン ${l.idx + 1} / ${l.track.lessons.length}</div>
@@ -3470,12 +3564,14 @@ function openRLesson(id){
     ${prevPat}
     <div class="small muted" style="margin:8px 0 4px">テンポを選んでスタート(ランクB以上で★、C以上で次のテンポ解放)</div>
     <div class="row wrap">${tierChips(l)}</div>
-    ${l.rt === 'strum' ? `<label class="row small" style="margin-top:12px;gap:8px"><input type="checkbox" ${RS().du ? 'checked' : ''} onchange="state.rhythm.du=this.checked;save()"> ダウン▼/アップ▲も判定する(画面の左右をタップ/F・Jキー)</label>` : ''}
+    ${inputSegHTML(l, `openRLesson('${id}')`)}
+    ${l.rt === 'strum' && inputMode(l) === 'tap' ? `<label class="row small" style="margin-top:12px;gap:8px"><input type="checkbox" ${RS().du ? 'checked' : ''} onchange="state.rhythm.du=this.checked;save()"> ダウン▼/アップ▲も判定する(画面の左右をタップ/F・Jキー)</label>` : ''}
     <div class="row wrap" style="margin-top:12px"><button class="btn sm" onclick="openArticle('${l.track.art}')">📖 解説</button><button class="btn sm" onclick="openCalib()">🎚️ タップ遅延の調整${RS().calibrated ? `(${RS().calibMs}ms)` : ''}</button></div>`);
 }
 function renderRhythm(){
   let h = `${!RS().calibrated ? `<div class="card tip row" style="gap:10px"><div class="grow small">🎚️ 最初に<b>タップ遅延の調整</b>をおすすめします。端末ごとの音の遅れを補正して、判定を正確にします。</div><button class="btn sm primary" onclick="openCalib()">調整する</button></div>` : ''}
     <p class="small muted" style="margin:6px 2px">テンポ3段階。ランクB以上で★、★1で次のレッスン解放。判定:${(RDIFF[RS().diff] || RDIFF.normal).label}(設定で変更)</p>`;
+  h += rhythmToolsHTML();
   RTRACKS.forEach(tr => { h += trackHTML(tr, 'openRLesson'); });
   $('#v-rhythm').innerHTML = h;
 }
@@ -3495,6 +3591,7 @@ function renderArcade(){
  <div class="arc-grid">
       <div class="arc-card rush" onclick="startRush()"><div class="arc-i">🚀</div><div class="arc-t">音階ラッシュ</div><div class="arc-d">鳴った音は<b>ドレミのどれ?</b>制限時間はどんどん短く、速いほど高得点。10連続でFEVER、レベルが上がると音が増え転調も。ミス3回で終了</div><div class="arc-b">ベスト ${a.rush ? a.rush.best.toLocaleString() : 0} 点 ・ 最高 Lv${state.arcade.rushLv || 0}</div></div>
       <div class="arc-card echo" onclick="startEcho()"><div class="arc-i">🔁</div><div class="arc-t">エコー・セッション</div><div class="arc-d">聴いたフレーズを<b>リズムに乗って</b>弾き返す。音感×リズム。3ミスで終了、成功するほど速く難しく</div><div class="arc-b">ベスト ${a.echo ? a.echo.best : 0} フレーズ</div></div>
+      <div class="arc-card recho" onclick="startREcho()"><div class="arc-i">👏</div><div class="arc-t">リズム・エコー</div><div class="arc-d">聴いた1小節のリズムを、そのまま叩き返す。音程なしで初心者でもOK。🎤マイクなら手拍子・声でも</div><div class="arc-b">ベスト ${a.recho ? a.recho.best : 0} リズム</div></div>
       <div class="arc-card surv" onclick="startSurvival()"><div class="arc-i">⚡</div><div class="arc-t">リズム・サバイバル</div><div class="arc-d">ストロークが止まらない。2小節ごとに加速、パターンも進化。MISS 3回で終了</div><div class="arc-b">ベスト ${a.surv ? a.surv.best : 0} 小節</div></div>
     </div>
     <div class="card">
@@ -4330,6 +4427,464 @@ function rushEnd(){
   if(newRec) confetti();
 }
 
+
+/* =====================================================================
+   リズム拡張:マイク入力(ギター・手拍子・声)、パターン集、エコー、テンポ診断、コードチェンジ、音符表示
+   ===================================================================== */
+
+/* ---------- マイクで「音の出だし(オンセット)」を検出 ----------
+   低音〜中音だけを通す(クリック音の高い成分は落ちる)→ 64サンプルごとの音量の急な立ち上がりを拾う */
+const ONS = {proc:null, nodes:null, cb:null, floor:.003, prev:0, last:0, level:0, an:null};
+const MIC_SENS = {high:.008, normal:.018, low:.04};
+async function onsetStart(cb){
+  const c = ac();
+  await micStart(() => {});
+  MIC.cb = null; clearInterval(MIC.timer); MIC.timer = 0;     // 音程の検出は使わない
+  ONS.cb = cb; ONS.last = 0; ONS.prev = 0; ONS.env = 0; ONS.hist = []; ONS.floor = .003;
+  if(!ONS.proc){
+    const hp = c.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 90;
+    // 500Hz以下だけを通す(3段)。ギターの低音・声・手拍子は通り、クリックの高い音はほぼ消える
+    const lps = [0, 1, 2].map(() => { const f = c.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 500; return f; });
+    const proc = c.createScriptProcessor(512, 1, 1);
+    const mute = c.createGain(); mute.gain.value = 0;
+    MIC.src.connect(hp); hp.connect(lps[0]); lps[0].connect(lps[1]); lps[1].connect(lps[2]); lps[2].connect(proc); proc.connect(mute); mute.connect(c.destination);
+    proc.onaudioprocess = onsetProcess;
+    // コード判定用(周波数分析)
+    const an = c.createAnalyser(); an.fftSize = 8192; an.smoothingTimeConstant = 0;
+    MIC.src.connect(an);
+    ONS.proc = proc; ONS.nodes = [hp, ...lps, mute, an]; ONS.an = an;
+  }
+}
+function onsetStop(){
+  ONS.cb = null;
+  if(ONS.proc){ try{ ONS.proc.disconnect(); ONS.nodes.forEach(n => n.disconnect()); }catch(e){} ONS.proc = null; ONS.an = null; }
+  micStop();
+}
+function onsetProcess(e){
+  if(!ONS.cb) return;
+  // 包絡線(瞬時に立ち上がり、約40msかけて下がる)を作り、約25ms前と比べて急に大きくなった瞬間を「出だし」とする
+  const d = e.inputBuffer.getChannelData(0), c = AE.ctx, sr = c.sampleRate;
+  const tEnd = c.currentTime, N = d.length, sub = 64;
+  const rel = Math.exp(-1 / (sr * .04));
+  const back = Math.max(4, Math.round(.025 * sr / sub));
+  const thr0 = MIC_SENS[RS().micSens] || MIC_SENS.normal;
+  const H = ONS.hist || (ONS.hist = []);
+  let env = ONS.env || 0;
+  for(let k = 0; k < N; k += sub){
+    let pk = 0;
+    for(let i = k; i < k + sub; i++){
+      const a = Math.abs(d[i]);
+      env = a > env ? a : env * rel;
+      if(a >= env && a > pk) pk = a;
+    }
+    const t = tEnd - (N - k) / sr;
+    H.push(env); if(H.length > back + 2) H.shift();
+    const before = H.length > back ? H[H.length - 1 - back] : 0;
+    ONS.level = Math.max(env, ONS.level * .985);
+    const thr = Math.max(thr0, ONS.floor * 4);
+    if(env > thr && env > before * 1.6 + thr0 * .5 && t - ONS.last > .075){ ONS.last = t; try{ ONS.cb(t, env); }catch(err){} }
+    if(env < ONS.floor * 3 || ONS.floor < 1e-4) ONS.floor = ONS.floor * .995 + env * .005;
+  }
+  ONS.env = env;
+}
+// マイクから見た遅れ(スピーカーの遅れ+マイクの遅れ)を測る。スピーカーで鳴らした音をマイクで拾う
+function thumpAt(t, dest){
+  const c = AE.ctx, len = .05, buf = c.createBuffer(1, Math.floor(c.sampleRate * len), c.sampleRate);
+  const d = buf.getChannelData(0);
+  for(let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / d.length, 3);
+  const src = c.createBufferSource(); src.buffer = buf;
+  const lp = c.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 500;
+  const g = c.createGain(); g.gain.value = 1.4;
+  src.connect(lp); lp.connect(g); g.connect(dest || AE.master); src.start(t);
+}
+let MCAL = null;
+function openMicCalib(after){
+  ac();
+  openSheet(`
+    <div class="sheet-head"><h3>🎤 マイクの遅れを測る</h3><button class="icon-btn" onclick="MCAL=null;onsetStop();closeSheet()">✕</button></div>
+    <p class="small">ギターや手拍子をマイクで判定するための準備です。<b>イヤホンを外して</b>、スピーカーの音量を上げ、静かにしてください。スピーカーから「ポン」が8回鳴ります(自動で測ります)。</p>
+    <div class="center" style="margin:12px 0"><button class="btn primary big" id="mcGo">自動で測る</button></div>
+    <p class="small muted">うまく測れないとき(イヤホン使用中など)は、クリックに合わせて<b>手拍子</b>で測れます:<button class="btn sm" id="mcClap">👏 手拍子で測る</button></p>
+    <div class="meter" style="margin-top:8px"><div class="needle" id="mcLvl" style="opacity:1;left:0;width:0;margin-left:0"></div></div>
+    <p class="center small" id="mcOut" style="margin:10px 0">現在の補正値:<b>${RS().micLat || 0}</b> ms ${RS().micCal ? '' : '(未測定)'}</p>`);
+  const run = async clap => {
+    const out = $('#mcOut');
+    try{ await onsetStart((t, en) => { if(MCAL) MCAL.on.push(t); }); }
+    catch(e){ out.innerHTML = micErrorHTML(e); return; }
+    const c = AE.ctx, N = clap ? 12 : 8, iv = clap ? 60 / 90 : .6, t0 = c.currentTime + .8;
+    MCAL = {on:[], at:[]};
+    for(let i = 0; i < N; i++){ const t = t0 + i * iv; MCAL.at.push(t); clap ? clickAt(t, i % 4 === 0, null, true) : thumpAt(t); }
+    out.textContent = clap ? '👏 クリックに合わせて手拍子!' : '🔊 測定中…(静かに)';
+    const lv = setInterval(() => { const el = $('#mcLvl'); if(el) el.style.width = Math.min(100, ONS.level * 500) + '%'; }, 50);
+    setTimeout(() => {
+      clearInterval(lv);
+      if(!MCAL) return;
+      const offs = [];
+      MCAL.at.forEach((t, i) => {
+        if(clap && i < 4) return;                                 // 最初の4拍は慣らし
+        const hit = MCAL.on.find(o => o > t - (clap ? .15 : .01) && o < t + .45);
+        if(hit !== undefined) offs.push((hit - t) * 1000);
+      });
+      onsetStop();
+      const need = clap ? 5 : 5;
+      if(offs.length < need){
+        out.innerHTML = clap ? 'うまく拾えませんでした。手拍子をもう少し大きく、もう一度どうぞ。' : 'うまく拾えませんでした。<b>手拍子で測る</b>をお試しください(イヤホン使用中・音量が小さい場合)。';
+        MCAL = null; return;
+      }
+      offs.sort((a, b) => a - b);
+      RS().micLat = Math.round(offs[Math.floor(offs.length / 2)]); RS().micCal = true; save();
+      out.innerHTML = `✅ マイクの遅れを <b>${RS().micLat}</b> ms に設定しました${after ? '<br><button class="btn primary" onclick="closeSheet();(' + after + ')()">続ける</button>' : ''}`;
+      MCAL = null;
+    }, (N * iv + 1.4) * 1000);
+  };
+  $('#mcGo').onclick = () => run(false);
+  $('#mcClap').onclick = () => run(true);
+}
+
+/* ---------- 入力方法(タップ/マイク) ---------- */
+const inputKey = l => l && l.mic ? 'inputV' : 'input';
+function inputMode(l){ const k = inputKey(l); return RS()[k] || (l && l.mic ? 'mic' : 'tap'); }
+function inputSegHTML(l, reopen){
+  const k = inputKey(l), cur = inputMode(l);
+  return `<div class="set-row"><div class="sl">入力<small>🎤 = ギターの実音・手拍子・声をマイクで判定(イヤホン推奨)</small></div>
+    <div class="seg"><button class="${cur === 'tap' ? 'on' : ''}" onclick="state.rhythm.${k}='tap';save();${reopen}">👆 タップ</button><button class="${cur === 'mic' ? 'on' : ''}" onclick="state.rhythm.${k}='mic';save();${reopen}">🎤 マイク</button></div></div>
+    ${cur === 'mic' ? `<div class="set-row"><div class="sl">マイクの遅れ<small>${RS().micCal ? RS().micLat + 'ms(測定済み)' : '未測定 — 一度測ると判定が正確になります'}</small></div><button class="btn sm ${RS().micCal ? '' : 'primary'}" onclick="openMicCalib()">🎤 測る</button></div>` : ''}`;
+}
+
+/* ---------- リズム唱(タン・タタ・タカタカ…) ---------- */
+const SYLL = {q:'タン', e2:'タタ', off:'ウタ', r:'ウン', s4:'タカタカ', es:'タ タカ', se:'タカ タ', ses:'タカ ァカ', ds:'タ ーカ', so:'ウカタカ', t3:'タタタ', sw:'タッカ'};
+function beatCells(hits, grid = 4){
+  const out = [];
+  for(let b = 0; b < 4; b++){
+    const f = hits.filter(h => h >= b - 1e-6 && h < b + 1 - 1e-6).map(h => Math.round((h - b) * 12) / 12);
+    const key = Object.keys(CELLS).find(k => CELLS[k].length === f.length && CELLS[k].every((x, i) => Math.abs(x - f[i]) < .02));
+    out.push(key || null);
+  }
+  return out;
+}
+
+/* ---------- 本物の音符(リズム譜)をSVGで描く ---------- */
+function rhythmNotationSVG(hits, o = {}){
+  const W = o.w || 300, H = o.h || 92, x0 = 14, bw = (W - x0 - 10) / 4, y = H - 30, top = y - 34;
+  const cells = beatCells(hits);
+  const col = o.color || 'var(--text)';
+  let s = `<svg viewBox="0 0 ${W} ${H}" width="100%" style="max-width:${W * 2}px;display:block;margin:0 auto" xmlns="http://www.w3.org/2000/svg">`;
+  s += `<line x1="4" x2="${W - 4}" y1="${y}" y2="${y}" stroke="var(--border)" stroke-width="1.5"/>`;
+  s += `<line x1="${W - 5}" x2="${W - 5}" y1="${y - 14}" y2="${y + 14}" stroke="var(--muted)" stroke-width="1.5"/>`;
+  const head = x => `<ellipse cx="${x}" cy="${y}" rx="6.2" ry="4.6" transform="rotate(-20 ${x} ${y})" fill="${col}"/>`;
+  const stem = x => `<line x1="${x + 5.4}" x2="${x + 5.4}" y1="${y - 2}" y2="${top}" stroke="${col}" stroke-width="1.6"/>`;
+  const beam = (a, b, lv = 0) => `<rect x="${a + 4.6}" y="${top + lv * 6.5}" width="${b - a + 1.6}" height="4.2" fill="${col}"/>`;
+  const stub = (x, dir, lv = 1) => `<rect x="${dir > 0 ? x + 4.6 : x - 4.4}" y="${top + lv * 6.5}" width="10" height="4.2" fill="${col}"/>`;
+  const flag = (x, n = 1) => Array.from({length:n}, (_, i) => `<path d="M${x + 5.4} ${top + i * 7} q 10 6 6 16" fill="none" stroke="${col}" stroke-width="2.2"/>`).join('');
+  const qrest = x => `<path d="M${x - 2} ${y - 16} l6 7 l-5 6 l6 7 q-7 -3 -6 4" fill="none" stroke="${col}" stroke-width="2.4" stroke-linejoin="round"/>`;
+  const erest = (x, n = 1) => Array.from({length:n}, (_, i) => `<circle cx="${x - 2 - i * 2}" cy="${y - 8 + i * 7}" r="2.6" fill="${col}"/><path d="M${x - 2 - i * 2} ${y - 8 + i * 7} q 5 1 7 -3" fill="none" stroke="${col}" stroke-width="1.6"/>`).join('') + `<line x1="${x + 5}" x2="${x - 1 - (n - 1) * 2}" y1="${y - 11}" y2="${y + 8}" stroke="${col}" stroke-width="1.6"/>`;
+  const dot = x => `<circle cx="${x + 11}" cy="${y - 2}" r="2" fill="${col}"/>`;
+  const three = (a, b) => `<text x="${(a + b) / 2 + 5}" y="${top - 4}" font-size="11" font-style="italic" text-anchor="middle" fill="${col}">3</text>`;
+  cells.forEach((c, b) => {
+    const X = x0 + b * bw, at = f => X + 6 + f * (bw - 16);
+    if(c === 'q'){ s += head(at(0)) + stem(at(0)); }
+    else if(c === 'r'){ s += qrest(at(.3)); }
+    else if(c === 'e2'){ const a = at(0), z = at(.5); s += head(a) + stem(a) + head(z) + stem(z) + beam(a, z); }
+    else if(c === 'off'){ const z = at(.5); s += erest(at(0) + 2) + head(z) + stem(z) + flag(z); }
+    else if(c === 's4'){ const xs = [0, .25, .5, .75].map(at); xs.forEach(x => s += head(x) + stem(x)); s += beam(xs[0], xs[3]) + beam(xs[0], xs[3], 1); }
+    else if(c === 'es'){ const xs = [0, .5, .75].map(at); xs.forEach(x => s += head(x) + stem(x)); s += beam(xs[0], xs[2]) + beam(xs[1], xs[2], 1); }
+    else if(c === 'se'){ const xs = [0, .25, .5].map(at); xs.forEach(x => s += head(x) + stem(x)); s += beam(xs[0], xs[2]) + beam(xs[0], xs[1], 1); }
+    else if(c === 'ses'){ const xs = [0, .25, .75].map(at); xs.forEach(x => s += head(x) + stem(x)); s += beam(xs[0], xs[2]) + stub(xs[0], 1) + stub(xs[2], -1); }
+    else if(c === 'ds'){ const xs = [0, .75].map(at); xs.forEach(x => s += head(x) + stem(x)); s += dot(xs[0]) + beam(xs[0], xs[1]) + stub(xs[1], -1); }
+    else if(c === 'so'){ const xs = [.25, .5, .75].map(at); s += erest(at(0) + 2, 2); xs.forEach(x => s += head(x) + stem(x)); s += beam(xs[0], xs[2]) + beam(xs[0], xs[2], 1); }
+    else if(c === 't3'){ const xs = [0, 1 / 3, 2 / 3].map(f => at(f * 1.1)); xs.forEach(x => s += head(x) + stem(x)); s += beam(xs[0], xs[2]) + three(xs[0], xs[2]); }
+    else if(c === 'sw'){ const a = at(0), z = at(.7); s += head(a) + stem(a) + head(z) + stem(z) + flag(z) + three(a, z); }
+    else{
+      // 想定外のリズムは16分のマス目で
+      const f = hits.filter(h => h >= b && h < b + 1).map(h => h - b);
+      f.forEach(v => { const x = at(v); s += head(x) + stem(x) + flag(x, 2); });
+    }
+    if(o.syll && c){ s += `<text x="${X + bw / 2}" y="${H - 6}" font-size="12" font-weight="800" text-anchor="middle" fill="var(--accent)">${SYLL[c] || ''}</text>`; }
+    if(o.dirs){ hits.forEach((h, i) => { if(h >= b && h < b + 1 && o.dirs[i]){ const x = at(h - b); s += `<text x="${x + 5}" y="${top - 6}" font-size="10" text-anchor="middle" fill="${o.dirs[i] === 'U' ? '#3D8BE0' : 'var(--accent)'}">${noteGlyph(o.dirs[i])}</text>`; } }); }
+  });
+  return s + '</svg>';
+}
+const notaMode = () => RS().nota || 'grid';      // grid / note / both
+
+/* ---------- 小節の表示(隠す・音符・リズム唱) ---------- */
+function drawBarView(bar, next){
+  const cfg = RG.cfg;
+  const hide = bar && bar.hideNotes && !bar.revealed;
+  drawBarNotes($('#rbar'), bar ? (hide ? {events:[]} : bar) : null);
+  drawBarNotes($('#rnext'), next && next.events.length && !next.hideNotes ? next : null, true);
+  const nota = $('#rnota');
+  if(nota){
+    if(!bar || hide || !bar.events.length){ nota.innerHTML = hide ? '<div class="center muted" style="padding:22px 0;font-weight:800">👂 よく聴いて… 👏</div>' : ''; }
+    else nota.innerHTML = rhythmNotationSVG(bar.events.map(e => e.b), {syll:cfg.syll, dirs:cfg.strumNota ? bar.events.map(e => e.d) : null});
+  }
+  const nn = $('#rnotaNext');
+  if(nn) nn.innerHTML = next && next.events.length && !next.hideNotes ? rhythmNotationSVG(next.events.map(e => e.b), {h:70, syll:cfg.syll}) : '';
+}
+
+/* ---------- リズム・エコー(聴いたリズムを叩き返す) ---------- */
+function startREcho(){
+  const mic = inputMode(null) === 'mic';
+  const E = {cleared:0, lv:1, cur:null};
+  const lvOf = n => n < 3 ? 1 : n < 6 ? 2 : n < 10 ? 3 : 4;
+  const bpmOf = () => Math.min(132, 80 + E.cleared * 2);
+  rgStart({
+    title:'👏 リズム・エコー', mode:'bar', bpm:80, lives:3, mic, nota:notaMode() !== 'grid',
+    bar(i){
+      if(i === 0) return {type:'count', events:[], label:'🎯 READY', bpm:bpmOf()};
+      const bpm = bpmOf();
+      if(i % 2 === 1){
+        E.lv = lvOf(E.cleared);
+        E.cur = genRhythmBar(E.lv).hits;
+        return {type:'call', bpm, events:E.cur.map(b => ({b, d:'T'})), sound:true, hideNotes:true, label:`👂 聴いて(Lv${E.lv})`, hint:'👂 まずは聴いて!'};
+      }
+      return {type:'resp', bpm, events:E.cur.map(b => ({b, d:'T'})), judge:true, hideNotes:true, label:`👏 ${mic ? '手拍子・声・ギターで' : 'タップで'}返して!`};
+    },
+    sound(e, t, bus){ percAt(t, bus); },
+    tapSound(inp, n, bus, t){ if(!inp.mic) percAt(t, bus, true); },
+    onBarEnd(b, R){
+      if(b.type !== 'resp') return;
+      const ns = R.notes.filter(n => n.bar === b.i);
+      const ok = ns.length && ns.every(n => n.judge !== 'M');
+      b.revealed = true;
+      const sub = $('#rjSub');
+      if(ok){ E.cleared++; R.score += 50 * E.lv; if(sub) sub.textContent = `✨ CLEAR ${E.cleared}`; sfx('ok'); }
+      else{ R.lives--; if(sub) sub.textContent = `💔 ${ns.filter(n => n.judge === 'M').length}つずれた`; sfx('ng'); if(R.lives <= 0){ R.finalBar = true; R.endTime = AE.ctx.currentTime; setTimeout(() => rgEnd(), 700); } }
+      updateRHud();
+    },
+    onEnd(res){
+      const a = state.arcade.recho || {};
+      const newRec = E.cleared > (a.best || 0);
+      if(newRec) state.arcade.recho = {best:E.cleared, lv:E.lv};
+      const xp = 10 + E.cleared * 5;
+      addXP(xp); today().done.arcade = true;
+      const notices = [`👏 ${E.cleared} リズム成功(Lv${E.lv}・最高 ♩=${bpmOf()})`];
+      if(newRec && a.best) notices.push(`🏆 自己ベスト更新!(前回 ${a.best})`);
+      planCheck(notices); save();
+      renderRResult(res, {title:'👏 リズム・エコー', xp, notices, newRec, endless:true, big:`${E.cleared}`, bigLabel:'リズム', retry:startREcho});
+    },
+  });
+}
+
+/* ---------- テンポキープ診断 ---------- */
+function openKeep(){
+  const log = RS().keepLog || [], last = log[log.length - 1];
+  openSheet(`
+    <div class="sheet-head"><h3>⏱ テンポキープ診断</h3><button class="icon-btn" onclick="closeSheet()">✕</button></div>
+    <p class="small">クリックに合わせて4分音符を叩きます。<b>3小節目からクリックが消えます</b>。そのまま同じテンポで叩き続けてください(6小節=24拍)。走る/もたるクセと、何拍キープできたかを測ります。</p>
+    ${last ? `<div class="notice" style="font-weight:400;text-align:left;font-size:13px">前回(${last.d.slice(5).replace('-', '/')} ♩${last.bpm}):キープ ${last.keep}拍 ・ ${last.drift > 0 ? '+' : ''}${last.drift.toFixed(1)} BPM ・ ばらつき ±${Math.round(last.sd)}ms</div>` : ''}
+    ${inputSegHTML(null, 'openKeep()')}
+    <div class="small muted" style="margin:8px 0 4px">テンポを選んでスタート</div>
+    <div class="row wrap">${[60,80,100,120].map(b => `<button class="bpm-chip" onclick="closeSheet();startKeep(${b})">♩${b}</button>`).join('')}</div>`);
+}
+function startKeep(bpm){
+  const mic = inputMode(null) === 'mic';
+  const CLICK = 2, SILENT = 6;
+  rgStart({
+    title:`⏱ テンポキープ診断 ♩=${bpm}`, mode:'bar', bpm, mic,
+    bar(i){
+      if(i === 0) return {type:'count', events:[], label:'🎯 クリックに合わせて準備'};
+      const m = i - 1;
+      if(m >= CLICK + SILENT) return null;
+      const silent = m >= CLICK;
+      return {type:'play', events:Q4.map(b => ({b, d:'T'})), judge:true, click:silent ? 'none' : 'all', label: silent ? `🔇 クリックなし ${m - CLICK + 1}/${SILENT} — 同じテンポで!` : `▶ クリックに合わせて ${m + 1}/${CLICK}`, silent};
+    },
+    sound(){},
+    tapSound(inp, n, bus, t){ if(!inp.mic) percAt(t, bus, true); },
+    onEnd(res){ finishKeep(res, bpm, CLICK); },
+  });
+}
+function finishKeep(res, bpm, CLICK){
+  const R = res.RG, beat = 60 / bpm;
+  const silentBars = R.bars.filter(b => b.silent);
+  const t0 = silentBars.length ? silentBars[0].t0 : null;
+  const taps = (R.raw || []).filter(t => t0 !== null && t > t0 - beat / 2).sort((a, b) => a - b);
+  // 各タップを最も近い拍に対応づけ、ずれ(ms)を出す
+  const pts = [];
+  taps.forEach(t => { const k = Math.round((t - t0) / beat); if(k >= 0 && k < silentBars.length * 4 && !pts.some(p => p.k === k)) pts.push({k, t, dev:(t - (t0 + k * beat)) * 1000}); });
+  let drift = 0, sd = 0, keep = 0, endMs = 0;
+  if(pts.length >= 4){
+    const n = pts.length, mk = pts.reduce((a, p) => a + p.k, 0) / n, mt = pts.reduce((a, p) => a + p.t, 0) / n;
+    const slope = pts.reduce((a, p) => a + (p.k - mk) * (p.t - mt), 0) / pts.reduce((a, p) => a + (p.k - mk) ** 2, 0);   // 実際の1拍の長さ(秒)
+    drift = 60 / slope - bpm;
+    endMs = (beat - slope) * (silentBars.length * 4) * 1000;        // クリックなし区間の最後までに積み重なるずれ(+ = 早くなる)
+    const resid = pts.map(p => (p.t - (mt + slope * (p.k - mk))) * 1000);
+    sd = Math.sqrt(resid.reduce((a, r) => a + r * r, 0) / n);
+    for(let k = 0; k < silentBars.length * 4; k++){ const p = pts.find(q => q.k === k); if(!p || Math.abs(p.dev) > 80) break; keep++; }
+  }
+  const log = RS().keepLog || (RS().keepLog = []);
+  log.push({d:todayStr(), bpm, drift:Math.round(drift * 10) / 10, sd:Math.round(sd), keep, endMs:Math.round(endMs)});
+  if(log.length > 60) log.shift();
+  const xp = 15 + Math.round(keep / 2);
+  addXP(xp); today().done.rhythm = true;
+  state.totals.keeps = (state.totals.keeps || 0) + 1;
+  const notices = [];
+  planCheck(notices); save();
+  const verdict = Math.abs(endMs) < 40 ? '<b style="color:var(--good)">テンポが安定しています!</b>' : endMs > 0 ? `<b style="color:#4C9BEA">走り気味</b>(だんだん速くなる)。拍の「ウラ」を感じて、少しゆったり` : `<b style="color:var(--bad)">もたり気味</b>(だんだん遅くなる)。拍の頭を少し前に感じて`;
+  const total = silentBars.length * 4;
+  $('#v-result').innerHTML = `
+    <div class="card" style="margin-top:16px">
+      <p class="center small muted">⏱ テンポキープ診断 ♩=${bpm}</p>
+      <div class="res-score">${keep}<span style="font-size:18px"> / ${total} 拍キープ</span></div>
+      <div class="res-msg">${verdict}</div>
+      <div class="stats-row" style="margin:12px 0">
+        <div class="stat-box"><div class="num">${Math.round(Math.abs(endMs))}ms</div><div class="lab">最後の拍で${endMs > 0 ? '早く' : '遅く'}なった量(40ms未満が安定)</div></div>
+        <div class="stat-box"><div class="num">${drift > 0 ? '+' : ''}${drift.toFixed(1)}</div><div class="lab">BPMの変化</div></div>
+        <div class="stat-box"><div class="num">±${Math.round(sd)}ms</div><div class="lab">ばらつき(小さいほど安定)</div></div>
+        <div class="stat-box"><div class="num">${pts.length}/${total}</div><div class="lab">クリックなしで叩けた拍</div></div>
+      </div>
+      <div class="res-xp"><span class="chip gold">+${xp} XP</span></div>
+      ${goalLine()}
+    </div>
+    <div class="card"><h3>拍ごとのずれ(クリックなしの区間)</h3><canvas id="cvKeep" height="150"></canvas>
+      <p class="small muted">上=早い / 下=遅い。右に行くほど上がっていれば「走り」、下がっていれば「もたり」。</p></div>
+    <div class="card"><h3>これまでの記録</h3>${log.slice(-6).reverse().map(r => `<div class="vrow small"><span style="width:70px">${r.d.slice(5).replace('-', '/')}</span><span style="width:52px">♩${r.bpm}</span><span class="grow">キープ ${r.keep}拍</span><span>${r.drift > 0 ? '+' : ''}${r.drift}BPM ±${r.sd}ms</span></div>`).join('')}</div>
+    <div class="row wrap" style="justify-content:center;margin:14px 0 24px">
+      <button class="btn primary big" onclick="startKeep(${bpm})">もう一度</button>
+      <button class="btn big" onclick="RG=null;document.body.classList.remove('in-game');setTab(currentTab)">もどる</button>
+    </div>`;
+  showView('result'); window.scrollTo(0, 0);
+  requestAnimationFrame(() => {
+    const cv = $('#cvKeep'); if(!cv || !cv.clientWidth) return;
+    const [g, w, h] = setupCanvas(cv), lim = 200, cy = h / 2, sc = (h / 2 - 10) / lim;
+    g.fillStyle = 'rgba(63,191,106,.12)'; g.fillRect(0, cy - 80 * sc, w, 160 * sc);
+    g.strokeStyle = 'rgba(128,128,128,.6)'; g.beginPath(); g.moveTo(0, cy); g.lineTo(w, cy); g.stroke();
+    const N = total;
+    pts.forEach(p => { const x = (p.k + .5) / N * w, y = cy + clamp(p.dev, -lim, lim) * sc; g.fillStyle = Math.abs(p.dev) <= 40 ? '#3FBF6A' : Math.abs(p.dev) <= 80 ? '#E0A21B' : '#E5564B'; g.beginPath(); g.arc(x, y, 4, 0, 7); g.fill(); });
+    g.fillStyle = 'rgba(128,128,128,.8)'; g.font = '10px sans-serif'; g.fillText('早い ↑', 4, 12); g.fillText('遅い ↓', 4, h - 4);
+  });
+  if(keep >= total) confetti();
+}
+
+/* ---------- コードチェンジ練習 ---------- */
+const CHORDS = {
+  C:{f:'x32010', pc:[0,4,7]},  G:{f:'320003', pc:[7,11,2]}, D:{f:'xx0232', pc:[2,6,9]},  A:{f:'x02220', pc:[9,1,4]},
+  E:{f:'022100', pc:[4,8,11]}, Am:{f:'x02210', pc:[9,0,4]}, Em:{f:'022000', pc:[4,7,11]}, Dm:{f:'xx0231', pc:[2,5,9]},
+};
+const CC_SETS = [['C','G'], ['G','D'], ['D','A'], ['Am','Em'], ['C','Am'], ['Em','C'], ['G','Em'], ['A','E'], ['G','C','D'], ['C','Am','Dm','G']];
+const CC_LV = [{n:8, label:'2小節ごと'}, {n:4, label:'1小節ごと'}, {n:2, label:'2拍ごと'}];
+function chordSVG(name, w = 96){
+  const ch = CHORDS[name]; if(!ch) return '';
+  const fr = ch.f.split('').map(c => c === 'x' ? -1 : +c);
+  const W = 96, H = 112, x0 = 18, sx = 13, y0 = 28, sy = 18;
+  let s = `<svg viewBox="0 0 ${W} ${H}" width="${w}" xmlns="http://www.w3.org/2000/svg"><text x="${W / 2}" y="14" font-size="14" font-weight="900" text-anchor="middle" fill="var(--text)">${name}</text>`;
+  s += `<rect x="${x0}" y="${y0 - 3}" width="${sx * 5}" height="4" fill="var(--text)"/>`;
+  for(let i = 0; i <= 4; i++) s += `<line x1="${x0}" x2="${x0 + sx * 5}" y1="${y0 + i * sy}" y2="${y0 + i * sy}" stroke="var(--muted)"/>`;
+  for(let i = 0; i < 6; i++) s += `<line x1="${x0 + i * sx}" x2="${x0 + i * sx}" y1="${y0}" y2="${y0 + 4 * sy}" stroke="var(--muted)"/>`;
+  fr.forEach((f, i) => {
+    const x = x0 + i * sx;
+    if(f < 0) s += `<text x="${x}" y="${y0 - 7}" font-size="10" text-anchor="middle" fill="var(--muted)">×</text>`;
+    else if(f === 0) s += `<circle cx="${x}" cy="${y0 - 10}" r="3.5" fill="none" stroke="var(--muted)"/>`;
+    else s += `<circle cx="${x}" cy="${y0 + (f - .5) * sy}" r="5.5" fill="var(--brand)"/>`;
+  });
+  return s + '</svg>';
+}
+// マイクの周波数から「どのコードを弾いたか」を推定(練習中の候補から選ぶ)
+// 周波数のピーク(山の頂点)だけを音名ごとに集計し、各コードの構成音にどれだけ集まっているかで決める
+function chromaNow(){
+  const an = ONS.an; if(!an) return null;
+  const c = AE.ctx, bins = new Float32Array(an.frequencyBinCount);
+  an.getFloatFrequencyData(bins);
+  const hzPer = c.sampleRate / an.fftSize, chroma = new Array(12).fill(0);
+  const lo = Math.floor(100 / hzPer), hi = Math.floor(1200 / hzPer);
+  let mx = -1e9; for(let i = lo; i < hi; i++) mx = Math.max(mx, bins[i]);
+  if(mx < -90) return null;
+  for(let i = lo + 1; i < hi - 1; i++){
+    const y = bins[i]; if(y < mx - 30 || y < bins[i - 1] || y < bins[i + 1]) continue;
+    const a = bins[i - 1], b = y, cc = bins[i + 1], den = a - 2 * b + cc;
+    const p = den ? (a - cc) / (2 * den) : 0;
+    const m = 69 + 12 * Math.log2((i + p) * hzPer / 440);
+    if(Math.abs(m - Math.round(m)) > .35) continue;
+    chroma[mod(Math.round(m), 12)] += Math.pow(10, (y - mx) / 20);
+  }
+  return chroma;
+}
+function detectChord(cands){
+  const ch = chromaNow(); if(!ch) return null;
+  const tot = ch.reduce((a, b) => a + b, 0) || 1;
+  let best = null, bs = -1;
+  cands.forEach(name => { const sc = CHORDS[name].pc.reduce((a, p) => a + ch[p], 0) / tot; if(sc > bs){ bs = sc; best = name; } });
+  return bs > .3 ? best : null;
+}
+function openChordChange(){
+  const cc = RS().cc || {set:0, lv:0, bpm:70};
+  const mic = inputMode(null) === 'mic';
+  openSheet(`
+    <div class="sheet-head"><h3>🎸 コードチェンジ練習</h3><button class="icon-btn" onclick="closeSheet()">✕</button></div>
+    <p class="small">4分音符のダウンストロークで弾きながら、決めたタイミングでコードを持ち替えます。🎤マイク入力なら<b>弾いたコードも判定</b>します(目安)。</p>
+    <div class="small muted" style="margin:8px 0 4px">コード</div>
+    <div class="row wrap">${CC_SETS.map((s, i) => `<button class="btn sm ${cc.set === i ? 'primary' : ''}" onclick="state.rhythm.cc=Object.assign({set:0,lv:0,bpm:70},state.rhythm.cc,{set:${i}});save();openChordChange()">${s.join('→')}</button>`).join('')}</div>
+    <div class="row wrap" style="justify-content:center;margin:8px 0">${CC_SETS[cc.set].map(n => chordSVG(n, 74)).join('')}</div>
+    <div class="set-row"><div class="sl">持ち替えの間隔</div><div class="seg">${CC_LV.map((v, i) => `<button class="${cc.lv === i ? 'on' : ''}" onclick="state.rhythm.cc=Object.assign({set:0,lv:0,bpm:70},state.rhythm.cc,{lv:${i}});save();openChordChange()">${v.label}</button>`).join('')}</div></div>
+    <div class="set-row"><div class="sl">テンポ</div><div class="seg">${[50,60,70,80,100].map(b => `<button class="${cc.bpm === b ? 'on' : ''}" onclick="state.rhythm.cc=Object.assign({set:0,lv:0,bpm:70},state.rhythm.cc,{bpm:${b}});save();openChordChange()">♩${b}</button>`).join('')}</div></div>
+    ${inputSegHTML(null, 'openChordChange()')}
+    ${(RS().ccLog || []).length ? `<p class="small muted">前回:持ち替え成功 ${RS().ccLog[RS().ccLog.length - 1].ok}/${RS().ccLog[RS().ccLog.length - 1].n}(${RS().ccLog[RS().ccLog.length - 1].set})</p>` : ''}
+    <div class="center" style="margin-top:12px"><button class="btn primary big" onclick="closeSheet();startChordChange()">はじめる</button></div>`);
+}
+function startChordChange(){
+  const cc = Object.assign({set:0, lv:0, bpm:70}, RS().cc);
+  const set = CC_SETS[cc.set], every = CC_LV[cc.lv].n, bpm = cc.bpm;
+  const mic = inputMode(null) === 'mic';
+  const BARS = 8, total = BARS * 4;
+  const chordAt = k => set[Math.floor(k / every) % set.length];      // k = 拍番号
+  const CCs = {changes:0, ok:0, checks:[]};
+  rgStart({
+    title:`🎸 コードチェンジ ${set.join('→')}`, mode:'bar', bpm, mic, chords:true,
+    bar(i){
+      if(i === 0) return {type:'count', events:[], label:`🎯 最初は ${chordAt(0)} を押さえて`};
+      const m = i - 1; if(m >= BARS) return null;
+      return {type:'play', events:Q4.map(b => { const k = m * 4 + b; return {b, d:'D', chord:chordAt(k), change:k > 0 && k % every === 0}; }), judge:true, label:`▶ ${m + 1}/${BARS} 小節`};
+    },
+    sound(){},
+    tapSound(inp, n, bus, t){ if(!inp.mic) strumAt(t, 'D', bus); },
+    onJudge(n, j){
+      if(!n.change) return;
+      CCs.changes++;
+      const timingOk = j !== 'M';
+      if(!mic){ if(timingOk) CCs.ok++; return; }
+      setTimeout(() => {
+        const got = detectChord(set);
+        const ok = timingOk && got === n.chord;
+        if(ok) CCs.ok++;
+        CCs.checks.push({want:n.chord, got, ok});
+        const sub = $('#rjSub'); if(sub) sub.innerHTML = ok ? `✅ ${n.chord} に持ち替え成功` : `${got ? `${got} に聞こえました` : '判定できず'}(目標 ${n.chord})`;
+      }, 180);    // 分析の窓(約0.17秒)が新しいコードの音で満たされてから判定
+    },
+    onBarStart(bar, R){
+      const ev = bar.events[0];
+      const cur = ev ? ev.chord : chordAt(0);
+      const nx = R.bars[bar.i + 1];
+      const nextCh = nx && nx.events[0] ? nx.events.find(e => e.change) : null;
+      const el = $('#ccPanel');
+      if(el) el.innerHTML = `<div class="cc-cur">${chordSVG(cur, 120)}</div><div class="cc-next">${(() => { const ch = bar.events.find(e => e.change) || nextCh; return ch ? `<div class="small muted">つぎ</div>${chordSVG(ch.chord, 76)}<div class="small muted">${bar.events.find(e => e.change) ? `${bar.events.find(e => e.change).b + 1}拍目で` : '次の小節'}</div>` : ''; })()}</div>`;
+    },
+    onEnd(res){
+      const log = RS().ccLog || (RS().ccLog = []);
+      log.push({d:todayStr(), set:set.join('→'), bpm, ok:CCs.ok, n:CCs.changes});
+      if(log.length > 60) log.shift();
+      const xp = 10 + Math.round(res.acc * 20) + CCs.ok;
+      addXP(xp); today().done.rhythm = true;
+      const notices = [`🎸 持ち替え成功 ${CCs.ok} / ${CCs.changes}${mic ? '(コードの判定は目安)' : '(タイミングのみ)'}`];
+      if(CCs.changes && CCs.ok === CCs.changes) notices.push('🎉 すべての持ち替えが間に合いました!');
+      planCheck(notices); save();
+      renderRResult(res, {title:`🎸 コードチェンジ ${set.join('→')} ♩=${bpm}`, xp, notices, newRec:false, retry:startChordChange,
+        next: cc.bpm < 100 ? {label:'テンポを上げて ▶', fn(){ state.rhythm.cc = Object.assign({}, cc, {bpm:[50,60,70,80,100][Math.min(4, [50,60,70,80,100].indexOf(cc.bpm) + 1)]}); save(); startChordChange(); }} : null});
+    },
+  });
+}
+
+/* ---------- リズムタブ上部の「ツール」 ---------- */
+function rhythmToolsHTML(){
+  const kl = RS().keepLog || [], k = kl[kl.length - 1];
+  const cl = RS().ccLog || [], c = cl[cl.length - 1];
+  return `<div class="card">
+    <h3 style="margin-bottom:2px">🧰 練習ツール</h3>
+    <div class="plan-item"><div style="font-size:26px">🎸</div><div class="grow"><div class="pt">コードチェンジ練習</div><div class="pd">${c ? `前回 ${c.set} ♩${c.bpm}:成功 ${c.ok}/${c.n}` : 'C→G などを決めたテンポで持ち替え'}</div></div><button class="btn sm primary" onclick="openChordChange()">開く</button></div>
+    <div class="plan-item"><div style="font-size:26px">⏱</div><div class="grow"><div class="pt">テンポキープ診断</div><div class="pd">${k ? `前回 ♩${k.bpm}:${k.keep}拍キープ・${k.drift > 0 ? '+' : ''}${k.drift}BPM` : 'クリックが消えても同じテンポを保てるか'}</div></div><button class="btn sm" onclick="openKeep()">開く</button></div>
+    <div class="plan-item"><div style="font-size:26px">🎤</div><div class="grow"><div class="pt">マイク入力の準備</div><div class="pd">${RS().micCal ? `遅れ ${RS().micLat}ms(測定済み)` : 'ギター・手拍子・声で判定するときに1回'}</div></div><button class="btn sm" onclick="openMicCalib()">測る</button></div>
+    <div class="set-row"><div class="sl">リズム譜の表示</div><div class="seg">${[['grid','マス目'],['note','音符'],['both','両方']].map(([k, t]) => `<button class="${notaMode() === k ? 'on' : ''}" onclick="state.rhythm.nota='${k}';save();renderRhythm()">${t}</button>`).join('')}</div></div>
+  </div>`;
+}
+
 /* =====================================================================
    画面
    ===================================================================== */
@@ -4491,6 +5046,7 @@ function renderCourse(){
   $('#v-course').innerHTML = h;
 }
 function openLesson(id){
+  if(!LESSONS[id] && VEXTRA[id]) return openVLesson(id);
   if(LESSONS[id].rt) return openRLesson(id);
   if(LESSONS[id].voice) return openVLesson(id);
   const l = LESSONS[id], ls = state.lessons[id] || {};
@@ -4867,6 +5423,9 @@ function renderSettings(){
       <h3>🥁 リズム</h3>
       <div class="set-row"><div class="sl">判定のきびしさ</div><div class="seg">${Object.entries(RDIFF).map(([k, v]) => `<button data-rset="diff" data-v="${k}" class="${RS().diff === k ? 'on' : ''}">${v.label}</button>`).join('')}</div></div>
       <div class="set-row"><div class="sl">タップ遅延の補正<small>現在 ${RS().calibMs}ms ${RS().calibrated ? '' : '(未調整)'}</small></div><button class="btn sm" onclick="openCalib()">🎚️ 調整する</button></div>
+      <div class="set-row"><div class="sl">マイク入力の遅れ<small>${RS().micCal ? RS().micLat + 'ms' : '未測定'}(ギター・手拍子・声で判定するとき)</small></div><button class="btn sm" onclick="openMicCalib()">🎤 測る</button></div>
+      <div class="set-row"><div class="sl">マイクの感度<small>反応しにくいときは「高」、雑音を拾うときは「低」</small></div><div class="seg">${[['high','高'],['normal','標準'],['low','低']].map(([k, t]) => `<button class="${RS().micSens === k ? 'on' : ''}" onclick="state.rhythm.micSens='${k}';save();renderSettings()">${t}</button>`).join('')}</div></div>
+      <div class="set-row"><div class="sl">リズム譜の表示</div><div class="seg">${[['grid','マス目'],['note','音符'],['both','両方']].map(([k, t]) => `<button class="${(RS().nota || 'grid') === k ? 'on' : ''}" onclick="state.rhythm.nota='${k}';save();renderSettings()">${t}</button>`).join('')}</div></div>
       <div class="set-row"><div class="sl">ストロークのダウン/アップ判定<small>画面の左=ダウン、右=アップ</small></div><input type="checkbox" id="setDU" ${RS().du ? 'checked' : ''}></div>
       <div class="set-row"><div class="sl">ノーツの落下速度<small>ソルフェ・ヒーロー/エコー</small></div><div class="seg">${[[0.75,'ゆっくり'],[1,'ふつう'],[1.35,'速い']].map(([v, t]) => `<button data-rset="speed" data-v="${v}" class="${RS().speed == v ? 'on' : ''}">${t}</button>`).join('')}</div></div>
     </div>

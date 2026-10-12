@@ -1,6 +1,6 @@
 // ソルフェ道場 service worker — アプリ本体はネット優先(更新をすぐ反映)、音源・アイコンはキャッシュ優先(オフライン対応)
 // キャッシュが使えない環境(プライベートブラウズ等)でも、必ずネットワークにフォールバックする
-const VERSION = 'v8';
+const VERSION = 'v9';
 const CORE = ['./', './index.html', './manifest.webmanifest', './icons/icon-192.png', './icons/icon-512.png', './icons/apple-touch-icon.png'];
 
 self.addEventListener('install', e => {
