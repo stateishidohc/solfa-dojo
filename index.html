@@ -210,6 +210,11 @@ body.in-game .tabbar{display:none}
 /* 五線 */
 .staff-wrap{display:flex;justify-content:center;margin:4px 0 8px}
 .staff-wrap svg{background:var(--card2);border-radius:12px}
+.sc-staff{overflow-x:auto;-webkit-overflow-scrolling:touch;margin:8px 0 4px}
+.sc-staff svg{display:block;width:100%;min-width:300px;background:var(--card2);border-radius:12px}
+.sc-staff .sn{cursor:pointer}
+.sc-staff .sn-hl{fill:var(--accent-soft);opacity:0;transition:opacity .12s}
+.sc-staff .sn-hl.on{opacity:1}
 
 /* マイク */
 .dl{font-weight:800;font-size:12px;color:var(--muted)}.dl.up{color:var(--good)}.dl.down{color:var(--bad)}
@@ -600,7 +605,7 @@ const SCALES = {
   harmminor: {name:'ハーモニックマイナー',      iv:[0,2,3,5,7,8,11], desc:'ナチュラルマイナーの7度を半音上げ、V→i の解決を強くした音階。中東風の響き。'},
   majpenta:  {name:'メジャーペンタトニック',    iv:[0,2,4,7,9],      desc:'ファとシ(半音の原因)を抜いた5音。どの音を弾いても外れにくい。'},
   minpenta:  {name:'マイナーペンタトニック',    iv:[0,3,5,7,10],     desc:'ロック・ブルースのソロの定番。ギターの箱ポジションで覚えやすい。'},
-  blues:     {name:'ブルース',                  iv:[0,3,5,6,7,10],   desc:'マイナーペンタ+♭5(ブルーノート)。'},
+  blues:     {name:'ブルース',                  iv:[0,3,5,6,7,10],   desc:'マイナーペンタ+♭5(ブルーノート)。', b5:true},
   dorian:    {name:'ドリアン',                  iv:[0,2,3,5,7,9,10], desc:'マイナーだが6度がナチュラル。おしゃれでクールなマイナー。'},
   mixolyd:   {name:'ミクソリディアン',          iv:[0,2,4,5,7,9,10], desc:'メジャーで7度だけ♭。ロック・ファンクの ♭VII 進行と相性抜群。'},
   lydian:    {name:'リディアン',                iv:[0,2,4,6,7,9,11], desc:'メジャーの4度が♯。浮遊感・映画音楽的。'},
@@ -2094,6 +2099,81 @@ function renderStaff(el, notes){
     if(st < 34) h += `<line x1="${x + 7}" x2="${x + 7}" y1="${y}" y2="${y - 36}" stroke="var(--text)" stroke-width="1.4"/>`;
     else h += `<line x1="${x - 7}" x2="${x - 7}" y1="${y}" y2="${y + 36}" stroke="var(--text)" stroke-width="1.4"/>`;
     if(n.sp.acc) h += `<text x="${x - 26}" y="${y + 7}" font-size="21" fill="var(--text)">${n.sp.acc}</text>`;
+  });
+  h += '</svg>';
+  el.innerHTML = h;
+}
+
+/* ---------- スケールの五線譜(図鑑用) ---------- */
+// 半音 → 主音から数えた文字の数(♯4はファの♯、♭5はソの♭として書く)
+const SEMI_LETTER = [0,1,1,2,2,3,3,4,5,5,6,6];
+// 調号の元にする7音(ペンタ・ブルース・ハーモニックは元の長調/短調の調号で書く)
+const SIG_PARENT = {majpenta:'major', natminor:'natminor', harmminor:'natminor', minpenta:'natminor', blues:'natminor'};
+const SHARP_ORDER = [[3,38],[0,35],[4,39],[1,36],[5,33],[2,37],[6,34]];   // [文字, 五線の段] F C G D A E B
+const FLAT_ORDER  = [[6,34],[2,37],[5,33],[1,36],[4,31],[0,35],[3,29]];   // B E A D G C F
+const ACC_SYM = {'-1':'♭', '0':'♮', '1':'♯'};
+const letterAcc = (li, pc) => mod(pc - LETTER_PC[mod(li, 7)] + 6, 12) - 6;
+// 主音 kpc のスケールを記譜音(ギター譜。主音は C4〜B4)で綴る。調号の少ない主音の書き方を選ぶ
+function scaleSpelling(scKey, kpc, minorish){
+  const sc = SCALES[scKey], parent = SCALES[SIG_PARENT[scKey] || scKey].iv;
+  const def = (minorish ? KEY_MIN : KEY_MAJ)[kpc];
+  const cands = [];
+  for(let li = 0; li < 7; li++){ const a = letterAcc(li, kpc); if(Math.abs(a) <= 1) cands.push({li, a}); }
+  const isDef = c => LETTERS[c.li] + (c.a ? ACC_SYM[c.a] : '') === def;
+  cands.sort((x, y) => isDef(y) - isDef(x));                       // 同点なら鍵盤ボタンの表記を優先
+  let best = null;
+  cands.forEach(c => {
+    const sig = parent.map((x, i) => letterAcc(c.li + i, kpc + x));
+    const cost = sig.reduce((t, a) => t + Math.abs(a) + (Math.abs(a) > 1 ? 10 : 0), 0);
+    if(!best || cost < best.cost) best = {c, sig, cost};
+  });
+  const {c} = best;
+  const sigAcc = [0,0,0,0,0,0,0];
+  best.sig.forEach((a, i) => { sigAcc[mod(c.li + i, 7)] = a; });
+  const tonicMidi = 60 + kpc;
+  const tonicStep = (Math.floor((tonicMidi - c.a) / 12) - 1) * 7 + c.li;
+  const notes = [...sc.iv, 12].map(x => {
+    let off = x === 12 ? 7 : (sc.b5 && x === 6) ? 4 : SEMI_LETTER[x];
+    let acc = letterAcc(c.li + off, kpc + x);
+    if(acc > 1){ off++; acc = letterAcc(c.li + off, kpc + x); }      // 重♯・重♭は避けて書き換える
+    if(acc < -1){ off--; acc = letterAcc(c.li + off, kpc + x); }
+    return {semi:x, step:tonicStep + off, li:mod(c.li + off, 7), acc, midi:tonicMidi + x};
+  });
+  const n = best.sig.filter(a => a).length;
+  return {notes, sigAcc, sigN:n, sigSharp: best.sig.some(a => a > 0)};
+}
+// o: {notes, sigAcc, sigN, sigSharp, useSig, labels[], colors[], inks[]}
+function renderScaleStaff(el, o){
+  const ls = 12, B = 88, stem = 34;
+  const yOf = st => B - (st - 30) * (ls / 2);                 // 第1線 = E4(段30)
+  const sigW = o.useSig && o.sigN ? o.sigN * 10 + 6 : 0;
+  const gap = 38, x0 = 56 + sigW + 24;
+  const W = x0 + (o.notes.length - 1) * gap + 26, H = 150;
+  let h = `<svg viewBox="0 0 ${W} ${H}" style="max-width:${Math.round(W * 1.3)}px" xmlns="http://www.w3.org/2000/svg">`;
+  o.notes.forEach((n, i) => { h += `<rect class="sn-hl" x="${x0 + i * gap - gap / 2 + 2}" y="6" width="${gap - 4}" height="${H - 12}" rx="8"/>`; });   // 線より下に敷く
+  for(let i = 0; i < 5; i++){ const y = B - i * ls; h += `<line x1="8" x2="${W - 8}" y1="${y}" y2="${y}" stroke="var(--text)" stroke-width="1.2"/>`; }
+  h += `<line x1="${W - 8}" x2="${W - 8}" y1="${B - 4 * ls}" y2="${B}" stroke="var(--text)" stroke-width="1.6"/>`;
+  h += `<text x="10" y="${B + 20}" font-size="104" fill="var(--text)" font-family="'Apple Symbols','Noto Music','Segoe UI Symbol',serif">𝄞</text>`;
+  h += `<text x="26" y="${B + 36}" font-size="11" fill="var(--muted)" font-style="italic">8</text>`;
+  if(sigW) (o.sigSharp ? SHARP_ORDER : FLAT_ORDER).slice(0, o.sigN).forEach(([li, st], i) => {
+    h += `<text x="${58 + i * 10}" y="${yOf(st) + (o.sigSharp ? 6 : 4)}" font-size="18" fill="var(--text)">${o.sigSharp ? '♯' : '♭'}</text>`;
+  });
+  // 臨時記号は小節内で持ち越すので、同じ段に前の記号が残っていれば書き直す
+  const eff = {};
+  o.notes.forEach((n, i) => {
+    const x = x0 + i * gap, y = yOf(n.step);
+    const cur = n.step in eff ? eff[n.step] : (o.useSig ? o.sigAcc[n.li] : 0);
+    const showAcc = n.acc !== cur;
+    eff[n.step] = n.acc;
+    h += `<g class="sn" data-i="${i}"><rect x="${x - gap / 2 + 2}" y="6" width="${gap - 4}" height="${H - 12}" fill="transparent"/>`;
+    for(let s = 28; s >= n.step; s -= 2) h += `<line x1="${x - 12}" x2="${x + 12}" y1="${yOf(s)}" y2="${yOf(s)}" stroke="var(--text)" stroke-width="1.2"/>`;
+    for(let s = 40; s <= n.step; s += 2) h += `<line x1="${x - 12}" x2="${x + 12}" y1="${yOf(s)}" y2="${yOf(s)}" stroke="var(--text)" stroke-width="1.2"/>`;
+    if(n.step < 34) h += `<line x1="${x + 6.6}" x2="${x + 6.6}" y1="${y}" y2="${y - stem}" stroke="var(--text)" stroke-width="1.4"/>`;
+    else h += `<line x1="${x - 6.6}" x2="${x - 6.6}" y1="${y}" y2="${y + stem}" stroke="var(--text)" stroke-width="1.4"/>`;
+    h += `<ellipse cx="${x}" cy="${y}" rx="7.4" ry="5.4" transform="rotate(-20 ${x} ${y})" fill="${o.colors[i]}" stroke="var(--text)" stroke-width="1.1"/>`;
+    if(showAcc) h += `<text x="${x - 21}" y="${y + (n.acc < 0 ? 5 : 6)}" font-size="18" fill="var(--text)">${ACC_SYM[n.acc]}</text>`;
+    h += `<rect x="${x - 16}" y="${H - 26}" width="32" height="18" rx="9" fill="${o.colors[i]}"/>`;
+    h += `<text x="${x}" y="${H - 13}" font-size="11" font-weight="800" text-anchor="middle" fill="${o.inks[i]}">${o.labels[i]}</text></g>`;
   });
   h += '</svg>';
   el.innerHTML = h;
@@ -5065,7 +5145,8 @@ function openLesson(id){
 }
 
 /* ---------- 図鑑 ---------- */
-const refState = {tab:'scale', key:0, scale:'major', label:'solfa', range:'all'};
+const refState = {tab:'scale', key:0, scale:'major', label:'solfa', range:'all', sig:false};
+let refStaffT = [], refTapT = 0;
 const RANGES = {low:[0,5,'0–5F'], mid:[5,10,'5–10F'], high:[9,15,'9–15F'], all:[0,15,'全部']};
 const DEG_FAMILY = [0,2,2,4,4,5,5,7,9,9,11,11];
 function renderRef(){
@@ -5091,6 +5172,12 @@ function renderScaleRef(){
       <div class="seg" style="margin-top:8px">${Object.entries(RANGES).map(([k, r]) => `<button data-rng="${k}" class="${refState.range === k ? 'on' : ''}">${r[2]}</button>`).join('')}</div>
       <div class="fb-wrap" id="refFb" style="margin-top:10px"></div>
       <p class="small muted">丸をタップすると音が鳴ります。</p>
+      <div class="row wrap" style="justify-content:space-between;margin-top:10px">
+        <b>🎼 五線譜</b>
+        <div class="seg">${[[0,'臨時記号'],[1,'調号']].map(([k, t]) => `<button data-sig="${k}" class="${+refState.sig === k ? 'on' : ''}">${t}</button>`).join('')}</div>
+      </div>
+      <div class="sc-staff" id="refStaff"></div>
+      <p class="small muted">${refState.sig ? '調号(ト音記号の右の♯・♭)は、その段の音すべてにかかります。' : '♯・♭を音符ごとに書いています。'}音符をタップすると鳴ります。ギター譜は実際の音より1オクターブ高く書きます(ト音記号の下の「8」)。</p>
       <div class="formula">${sc.iv.map((x, i) => `<span style="background:${DEG_COLOR[DEG_FAMILY[x]]};color:${DEG_INK[DEG_FAMILY[x]]}">${DEGNUM[x]} ${SOLFA[x]}</span>${i < sc.iv.length - 1 ? `<span>${stepTxt(steps[i])}</span>` : ''}`).join('')}</div>
       <p class="small" style="margin:6px 0">${sc.desc}</p>
       <div class="row wrap"><button class="btn sm primary" id="refPlay">▶ 上行→下行</button><button class="btn sm" id="refCad">🎼 カデンツ(${minorish ? '短調' : '長調'})</button></div>
@@ -5107,11 +5194,28 @@ function renderScaleRef(){
     dots.push({s, f, label, color:DEG_COLOR[fam], ink:DEG_INK[fam], ring: semi === 0, r: semi === 0 ? 13 : 11});
   }
   renderFretboard($('#refFb'), {fmin, fmax, dots, onTap:(s, f, m) => { ac(); note(m, 0); }});
+  const spl = scaleSpelling(refState.scale, kpc, minorish);
+  const fam = spl.notes.map(n => DEG_FAMILY[mod(n.semi, 12)]);
+  renderScaleStaff($('#refStaff'), {...spl, useSig:refState.sig,
+    labels: spl.notes.map(n => refState.label === 'solfa' ? SOLFA[mod(n.semi, 12)] : refState.label === 'num' ? DEGNUM[mod(n.semi, 12)] : LETTERS[n.li] + (n.acc ? ACC_SYM[n.acc] : '')),
+    colors: fam.map(f => DEG_COLOR[f]), inks: fam.map(f => DEG_INK[f])});
+  const staffEls = $$('#refStaff .sn'), hlEls = $$('#refStaff .sn-hl');
+  const lightStaff = i => hlEls.forEach((r, j) => r.classList.toggle('on', j === i));
+  staffEls.forEach(g => g.onclick = () => { ac(); const n = spl.notes[+g.dataset.i]; note(n.midi - 12, 0); lightStaff(+g.dataset.i); clearTimeout(refTapT); refTapT = setTimeout(() => lightStaff(-1), 500); });
+  refStaffT.forEach(clearTimeout); refStaffT = [];
+  $$('#refBody [data-sig]').forEach(b => b.onclick = () => { refState.sig = !!+b.dataset.sig; renderScaleRef(); });
   $$('#refBody [data-key]').forEach(b => b.onclick = () => { refState.key = +b.dataset.key; renderScaleRef(); });
   $$('#refBody [data-lab]').forEach(b => b.onclick = () => { refState.label = b.dataset.lab; renderScaleRef(); });
   $$('#refBody [data-rng]').forEach(b => b.onclick = () => { refState.range = b.dataset.rng; renderScaleRef(); });
   $('#refScale').onchange = e => { refState.scale = e.target.value; renderScaleRef(); };
-  $('#refPlay').onclick = () => { ac(); stopAll(); const t = 48 + kpc; const up = [...sc.iv.map(x => t + x), t + 12]; playSeq([...up, ...up.slice(0, -1).reverse()], 0, 0.3); };
+  $('#refPlay').onclick = () => {
+    ac(); stopAll(); refStaffT.forEach(clearTimeout); refStaffT = [];
+    const t = 48 + kpc; const up = [...sc.iv.map(x => t + x), t + 12]; const seq = [...up, ...up.slice(0, -1).reverse()];
+    playSeq(seq, 0, 0.3);
+    const idx = [...up.keys(), ...[...up.keys()].slice(0, -1).reverse()], step = 0.3 * tempo() * 1000;
+    idx.forEach((i, k) => refStaffT.push(setTimeout(() => lightStaff(i), 20 + k * step)));
+    refStaffT.push(setTimeout(() => lightStaff(-1), 20 + idx.length * step));
+  };
   $('#refCad').onclick = () => { ac(); stopAll(); cadence(48 + kpc, minorish); };
 }
 function renderArticles(){
